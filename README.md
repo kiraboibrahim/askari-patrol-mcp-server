@@ -13,24 +13,32 @@ Contains a lightweight HTTP client and an MCP (Multi-Channel Processor) server s
 ## Installation
 
 ```bash
-uv sync
+# Install dependencies
+make install
 ```
 
 ## Usage
 
 ```bash
-uv run python -m askari_patrol_server.server
+# Run MCP Server
+make server
+
+# Run WhatsApp Client
+make whatsapp
 ```
 
 ## Development
 
 ```bash
 # Run tests
-uv run pytest
+make test
 
 # Format code
-uv run ruff format .
+make format
 
 # Lint code
-uv run ruff check .
+make lint
+
+# Automatically fix lint issues
+make fix
 ```
