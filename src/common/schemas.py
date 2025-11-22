@@ -1,24 +1,25 @@
-from typing import TypedDict, TypeVar, Generic, List, Optional, Literal
+from typing import Generic, Literal, TypedDict, TypeVar
 
 # Generic type for items in the data list
-T = TypeVar("T")  
+T = TypeVar("T")
+
 
 class PaginationMeta(TypedDict):
     itemsPerPage: int
     totalItems: int
     currentPage: int
     totalPages: int
-    sortBy: List[List[str]]
+    sortBy: list[list[str]]
 
 
 class PaginationLinks(TypedDict):
-    first: Optional[str]
-    previous: Optional[str]
-    current: Optional[str]
+    first: str | None
+    previous: str | None
+    current: str | None
 
 
 class PaginatedResponse(TypedDict, Generic[T]):
-    data: List[T]
+    data: list[T]
     meta: PaginationMeta
     links: PaginationLinks
 
@@ -36,13 +37,12 @@ class StatsResponse(TypedDict):
     tagCount: int
 
 
-
 class Company(TypedDict, total=False):
     id: int
     registrationNumber: str
     name: str
     address: str
-    logo: Optional[str]
+    logo: str | None
 
 
 class Tag(TypedDict):
@@ -61,14 +61,15 @@ class Site(TypedDict, total=False):
     requiredPatrolsPerGuard: int
     notificationsEnabled: bool
     notificationCycle: str
-    ownerUserId: Optional[int]
+    ownerUserId: int | None
     patrolType: str
     securityGuardCount: int
-    admin: Optional[str]
-    owner: Optional[str]
+    admin: str | None
+    owner: str | None
     company: Company
-    tags: List[Tag]
-    latestPatrol: Optional[str]
+    tags: list[Tag]
+    latestPatrol: str | None
+
 
 class SecurityGuard(TypedDict):
     id: int
@@ -82,16 +83,18 @@ class SecurityGuard(TypedDict):
     role: str
     phoneNumber: str
 
+
 class SiteWithoutTags(Site, total=False):
     tags: None
-    owner: None 
-    admin: Optional[dict] 
+    owner: None
+    admin: dict | None
+
 
 class Shift(TypedDict):
     id: int
     type: Literal["DAY", "NIGHT"]
     site: SiteWithoutTags
-    securityGuards: List[SecurityGuard]
+    securityGuards: list[SecurityGuard]
 
 
 class CallAnsweredBy(TypedDict):
@@ -105,11 +108,21 @@ class CallAnsweredBy(TypedDict):
     role: str
     phoneNumber: str
 
+
 class CallLog(TypedDict):
     id: int
     time: str
     date: str
     isAnswered: bool
-    response: Optional[str]
+    response: str | None
     site: SiteWithoutTags
-    answeredBy: Optional[CallAnsweredBy]
+    answeredBy: CallAnsweredBy | None
+
+
+class Patrol(TypedDict):
+    id: int
+    date: str  # "YYYY-MM-DD"
+    startTime: str  # "HH:MM:SS"
+    securityGuardUniqueId: str
+    securityGuard: SecurityGuard | None
+    site: SiteWithoutTags

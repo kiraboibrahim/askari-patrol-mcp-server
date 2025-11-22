@@ -8,3 +8,24 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tools
+.ruff_cache/
+.mypy_cache/
+
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets
+.env
+.env.*rc
+secrets.json

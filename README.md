@@ -1,19 +1,36 @@
 # Askari Patrol MCP Server
 
-Small utility library and MCP server wrapper for interacting with the Askari Patrol GuardTour API.
+Small utility and MCP server wrapper for interacting with the Askari Patrol / GuardTour API.
+Contains a lightweight HTTP client and an MCP (Multi-Channel Processor) server scaffold to expose tooling and formatters (including WhatsApp formatter examples).
 
-- Core client implementation: [`api.AskariPatrolClient`](src/api.py)
-- Data shapes and response schemas: [`schemas`](src/schemas.py)
-- Minimal entrypoint: [`main.main`](src/main.py)
-- MCP server scaffolding: [`server.mcp`](src/server.py)
+## Features
 
-Requirements
-- Python >= 3.12 (see [.python-version](.python-version))
-- Dependencies listed in [pyproject.toml](pyproject.toml)
+- HTTP client utilities for the Askari Patrol API
+- Formatting helpers for messaging channels (client/formatters/)
+- Minimal MCP server scaffold to expose tools and workflows (server/mcp.py)
+- Unit tests and basic developer tooling
 
-Installation
+## Installation
 
-1. Create and activate a virtual environment (recommended):
-```python
-python -m venv .venv
-source .venv/bin/activate
+```bash
+uv sync
+```
+
+## Usage
+
+```bash
+uv run python -m askari_patrol_server.server
+```
+
+## Development
+
+```bash
+# Run tests
+uv run pytest
+
+# Format code
+uv run ruff format .
+
+# Lint code
+uv run ruff check .
+```

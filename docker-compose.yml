@@ -1,0 +1,21 @@
+services:
+  server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  whatsapp:
+    build: .
+    ports:
+      - "8001:8001"
+    command: uv run askari-whatsapp
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
+      - MCP_SERVER_URL=http://server:8000/mcp
+    depends_on:
+      - server
