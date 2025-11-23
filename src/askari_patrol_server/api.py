@@ -1,14 +1,15 @@
 import httpx
 from common.schemas import (
     CallLog,
+    GetStatsResponse,
     LoginResponse,
     PaginatedResponse,
     Patrol,
     SecurityGuard,
     Shift,
     Site,
-    StatsResponse,
 )
+from common.utils import is_token_valid
 
 
 class AskariPatrolAsyncClient(httpx.AsyncClient):
@@ -24,7 +25,7 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         self._token = token
         self.headers.update({"Authorization": f"Bearer {token}"})
 
-    async def login(self, *, username: str, password: str) -> LoginResponse:
+    async def login(self, username: str, password: str) -> LoginResponse:
         resp = await self.post(
             "/auth/signin",
             json={"username": username, "password": password},
@@ -34,8 +35,15 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         self._set_auth_header(data["access_token"])
         return data
 
-    async def get_stats(self) -> StatsResponse:
+    async def get_stats(self) -> GetStatsResponse:
         resp = await self.get("/stats")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def search_sites(
+        self, query: str, page: int | None = 1
+    ) -> PaginatedResponse[Site]:
+        resp = await self.get("/sites", params={"search": query, "page": page})
         resp.raise_for_status()
         return resp.json()
 
@@ -100,3 +108,6 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
             )
             resp.raise_for_status()
             return resp.json()
+
+    def is_authenticated(self) -> bool:
+        return self._token is not None and is_token_valid(self._token)

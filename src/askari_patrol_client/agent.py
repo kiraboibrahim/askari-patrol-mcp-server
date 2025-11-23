@@ -1,42 +1,51 @@
-from agents import Agent, Runner
-from agents.mcp import MCPServerStreamableHttp
+"""
+Askari Patrol Agent
 
-from .prompts import SYSTEM_INSTRUCTIONS as DEFAULT_INSTRUCTIONS
+A reusable agent layer for the Askari Patrol MCP server using Pydantic AI with Groq.
+
+Usage:
+    async with AskariAgent() as agent:
+        response = await agent.run("Show me all sites")
+        print(response)
+"""
+
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStreamableHTTP
+
+from .prompts import SYSTEM_INSTRUCTIONS
 
 
 class AskariAgent:
     """
-    Reusable agent for Askari Patrol.
+    Reusable agent for Askari Patrol using Pydantic AI with Groq.
 
     Connects to the MCP server and processes natural language queries.
     """
 
+    DEFAULT_INSTRUCTIONS = SYSTEM_INSTRUCTIONS
+
     def __init__(
         self,
         server_url: str = "http://localhost:8000/mcp",
-        instructions: str = DEFAULT_INSTRUCTIONS,
-        model: str = "gpt-4o",
+        instructions: str = SYSTEM_INSTRUCTIONS,
+        model: str = "groq:openai/gpt-oss-120b",
     ):
         self.server_url = server_url
         self.instructions = instructions
         self.model = model
 
-        self._server: MCPServerStreamableHttp | None = None
+        self._server: MCPServerStreamableHTTP | None = None
         self._agent: Agent | None = None
 
     async def connect(self):
         """Connect to the MCP server."""
-        self._server = MCPServerStreamableHttp(
-            name="Askari Patrol",
-            params={"url": self.server_url, "timeout": 30},
-            cache_tools_list=True,
-        )
+        self._server = MCPServerStreamableHTTP(self.server_url)
         await self._server.__aenter__()
 
         self._agent = Agent(
-            name="Askari Assistant",
-            instructions=self.instructions,
-            mcp_servers=[self._server],
+            self.model,
+            system_prompt=self.instructions,
+            toolsets=[self._server],
         )
 
     async def disconnect(self):
@@ -59,8 +68,8 @@ class AskariAgent:
         if not self._agent:
             raise RuntimeError("Agent not connected. Call connect() first.")
 
-        result = await Runner.run(self._agent, message)
-        return result.final_output
+        result = await self._agent.run(message)
+        return result.output
 
     async def __aenter__(self):
         await self.connect()

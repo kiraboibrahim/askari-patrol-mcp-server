@@ -1,13 +1,12 @@
 # Askari Patrol MCP Server
 
 Small utility and MCP server wrapper for interacting with the Askari Patrol / GuardTour API.
-Contains a lightweight HTTP client and an MCP (Multi-Channel Processor) server scaffold to expose tooling and formatters (including WhatsApp formatter examples).
+Contains a lightweight HTTP client and an MCP (Model Context Processor) server scaffold to expose tooling.
 
 ## Features
 
 - HTTP client utilities for the Askari Patrol API
-- Formatting helpers for messaging channels (client/formatters/)
-- Minimal MCP server scaffold to expose tools and workflows (server/mcp.py)
+- Minimal MCP server scaffold to expose tools and workflows
 - Unit tests and basic developer tooling
 
 ## Installation
@@ -41,4 +40,15 @@ make lint
 
 # Automatically fix lint issues
 make fix
+```
+
+## Running the Command Line Chat Client
+
+```bash
+
+# Open first terminal(tab)
+make server
+
+# Open second terminal(tab)
+make chat
 ```

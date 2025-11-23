@@ -2,6 +2,12 @@
 
 PYTHONPATH := src
 
+# Load environment variables from .env file if it exists
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 # Run MCP server
 server:
 	PYTHONPATH=$(PYTHONPATH) uv run python -m askari_patrol_server.server
@@ -9,6 +15,10 @@ server:
 # Run WhatsApp client
 whatsapp:
 	PYTHONPATH=$(PYTHONPATH) uv run python -m askari_patrol_client.whatsapp_client
+
+# Run chat script
+chat:
+	PYTHONPATH=$(PYTHONPATH) uv run python scripts/chat.py
 
 # Run tests
 test:
@@ -42,7 +52,10 @@ clean:
 
 # Docker
 docker-up:
-	docker compose up --build
+	docker-compose up --build
 
 docker-down:
-	docker compose down
+	docker-compose down
+
+dev:
+	make -j2 server whatsapp

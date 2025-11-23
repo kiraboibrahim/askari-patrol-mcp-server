@@ -7,6 +7,7 @@ supported formatting: *bold*, _italic_, ~strikethrough~, ```monospace```
 
 from common.schemas import (
     CallLog,
+    GetStatsResponse,
     LoginResponse,
     PaginatedResponse,
     PaginationMeta,
@@ -14,7 +15,6 @@ from common.schemas import (
     SecurityGuard,
     Shift,
     Site,
-    StatsResponse,
 )
 
 
@@ -77,7 +77,7 @@ class WhatsAppFormatter:
         """Format token set confirmation."""
         return f"{self.EMOJI['success']} *Authentication token set successfully*"
 
-    def format_stats(self, stats: StatsResponse) -> str:
+    def format_stats(self, stats: GetStatsResponse) -> str:
         """Format system statistics."""
         return (
             f"{self.EMOJI['stats']} *System Statistics*\n"

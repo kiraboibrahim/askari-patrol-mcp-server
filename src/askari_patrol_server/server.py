@@ -2,9 +2,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from common.schemas import (
+    CallLog,
+    GetStatsResponse,
+    LoginResponse,
+    PaginatedResponse,
+    Patrol,
+    SecurityGuard,
+    ServerHealthResponse,
+    Shift,
+    Site,
+)
 from mcp.server.fastmcp import FastMCP
-from starlette.applications import Starlette
-from starlette.routing import Mount
 
 from .api import AskariPatrolAsyncClient
 
@@ -19,8 +28,7 @@ class AppContext:
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """Manage API client lifecycle."""
-    async with AskariPatrolAsyncClient() as client:
-        yield AppContext(client=client)
+    yield {}
 
 
 mcp = FastMCP(
@@ -31,13 +39,19 @@ mcp = FastMCP(
 )
 
 
-def get_client() -> AppContext:
-    ctx = mcp.get_context().request_context.lifespan_context
-    return ctx.client
+def get_client() -> AskariPatrolAsyncClient:
+    ctx = mcp.get_context().request_context
+    session = ctx.session  # unique per chat user
+
+    if not hasattr(session, "_client"):
+        session._client = AskariPatrolAsyncClient()
+        session._exit_stack.push_async_callback(session._client.aclose)
+
+    return session._client
 
 
 @mcp.tool()
-async def login(username: str, password: str) -> dict:
+async def login(username: str, password: str) -> LoginResponse:
     """
     Authenticate with the Askari Patrol API.
     Returns an access token that will be used for subsequent requests.
@@ -52,7 +66,7 @@ async def login(username: str, password: str) -> dict:
 
 
 @mcp.tool()
-async def get_stats() -> dict:
+async def get_stats() -> GetStatsResponse:
     """
     Get overall statistics including counts of companies, admins, guards, sites, and tags.
     Requires authentication.
@@ -62,7 +76,21 @@ async def get_stats() -> dict:
 
 
 @mcp.tool()
-async def get_sites(page: int = 1) -> dict:
+async def search_sites(query: str, page: int = 1) -> PaginatedResponse[Site]:
+    """
+    Search for sites by name or other criteria.
+    Requires authentication.
+
+    Args:
+        query: Search query string
+        page: Page number for pagination (default: 1)
+    """
+    client = get_client()
+    return await client.search_sites(query, page)
+
+
+@mcp.tool()
+async def get_sites(page: int = 1) -> PaginatedResponse[Site]:
     """
     Get a paginated list of all sites.
     Requires authentication.
@@ -75,7 +103,7 @@ async def get_sites(page: int = 1) -> dict:
 
 
 @mcp.tool()
-async def get_site_shifts(site_id: int) -> list:
+async def get_site_shifts(site_id: int) -> list[Shift]:
     """
     Get all shifts for a specific site.
     Requires authentication.
@@ -88,7 +116,7 @@ async def get_site_shifts(site_id: int) -> list:
 
 
 @mcp.tool()
-async def get_site_patrols(site_id: int, page: int = 1) -> dict:
+async def get_site_patrols(site_id: int, page: int = 1) -> PaginatedResponse[Patrol]:
     """
     Get paginated patrol records for a specific site.
     Does NOT require authentication.
@@ -102,7 +130,7 @@ async def get_site_patrols(site_id: int, page: int = 1) -> dict:
 
 
 @mcp.tool()
-async def get_site_call_logs(site_id: int, page: int = 1) -> dict:
+async def get_site_call_logs(site_id: int, page: int = 1) -> PaginatedResponse[CallLog]:
     """
     Get paginated call logs for a specific site.
     Requires authentication.
@@ -116,7 +144,9 @@ async def get_site_call_logs(site_id: int, page: int = 1) -> dict:
 
 
 @mcp.tool()
-async def get_site_notifications(site_id: int, page: int = 1) -> dict:
+async def get_site_notifications(
+    site_id: int, page: int = 1
+) -> PaginatedResponse[dict]:
     """
     Get paginated notifications for a specific site.
     Requires authentication.
@@ -145,7 +175,7 @@ async def get_site_monthly_score(site_id: int, year: int, month: int) -> str:
 
 
 @mcp.tool()
-async def search_guards(query: str, page: int = 1) -> dict:
+async def search_guards(query: str, page: int = 1) -> PaginatedResponse[SecurityGuard]:
     """
     Search for security guards by name or other criteria.
     Requires authentication.
@@ -159,7 +189,7 @@ async def search_guards(query: str, page: int = 1) -> dict:
 
 
 @mcp.tool()
-async def get_guard_patrols(guard_id: int, page: int = 1) -> dict:
+async def get_guard_patrols(guard_id: int, page: int = 1) -> PaginatedResponse[Patrol]:
     """
     Get paginated patrol records for a specific security guard.
     Does NOT require authentication.
@@ -172,15 +202,43 @@ async def get_guard_patrols(guard_id: int, page: int = 1) -> dict:
     return await client.get_guard_patrols(guard_id, page)
 
 
-app = Starlette(routes=[Mount("/mcp", app=mcp.streamable_http_app())])
+@mcp.tool()
+async def logout() -> dict:
+    """
+    Logout and clear the client session.
+    """
+    ctx = mcp.get_context().request_context
+    session = ctx.session
+
+    client: AskariPatrolAsyncClient | None = getattr(session, "_client", None)
+    if client:
+        await client.aclose()
+        delattr(session, "_client")
+
+    return {"success": True, "message": "Logged out successfully"}
+
+
+@mcp.tool()
+async def is_authenticated() -> bool:
+    """
+    Check if the current session is authenticated.
+    """
+    ctx = mcp.get_context().request_context
+    session = ctx.session
+
+    client: AskariPatrolAsyncClient | None = getattr(session, "_client", None)
+    if client:
+        return client.is_authenticated()
+    return False
+
+
+@mcp.tool()
+async def is_healthy() -> ServerHealthResponse:
+    """
+    Health check endpoint to verify server is running.
+    """
+    return {"status": "ok"}
+
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "askari_patrol_server.server:app",
-        host="0.0.0.0",
-        port=8000,
-        log_level="info",
-        reload=True,
-    )
+    mcp.run(transport="streamable-http", mount_path="/mcp")
