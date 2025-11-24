@@ -2,16 +2,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from common.schemas import (
-    CallLog,
+from common.schemas.response_schemas import (
+    GetGuardPatrolsResponse,
+    GetGuardsResponse,
+    GetServerHealthResponse,
+    GetSiteCallLogsResponse,
+    GetSiteGuardsResponse,
+    GetSiteNotificationsResponse,
+    GetSitePatrolsResponse,
+    GetSiteShiftsResponse,
+    GetSitesRespnose,
     GetStatsResponse,
     LoginResponse,
-    PaginatedResponse,
-    Patrol,
-    SecurityGuard,
-    ServerHealthResponse,
-    Shift,
-    Site,
 )
 from mcp.server.fastmcp import FastMCP
 
@@ -76,7 +78,7 @@ async def get_stats() -> GetStatsResponse:
 
 
 @mcp.tool()
-async def search_sites(query: str, page: int = 1) -> PaginatedResponse[Site]:
+async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
     """
     Search for sites by name or other criteria.
     Requires authentication.
@@ -90,7 +92,7 @@ async def search_sites(query: str, page: int = 1) -> PaginatedResponse[Site]:
 
 
 @mcp.tool()
-async def get_sites(page: int = 1) -> PaginatedResponse[Site]:
+async def get_sites(page: int = 1) -> GetStatsResponse:
     """
     Get a paginated list of all sites.
     Requires authentication.
@@ -103,7 +105,7 @@ async def get_sites(page: int = 1) -> PaginatedResponse[Site]:
 
 
 @mcp.tool()
-async def get_site_shifts(site_id: int) -> list[Shift]:
+async def get_site_shifts(site_id: int) -> GetSiteShiftsResponse:
     """
     Get all shifts for a specific site.
     Requires authentication.
@@ -116,7 +118,20 @@ async def get_site_shifts(site_id: int) -> list[Shift]:
 
 
 @mcp.tool()
-async def get_site_patrols(site_id: int, page: int = 1) -> PaginatedResponse[Patrol]:
+async def get_site_guards(site_id: int) -> GetSiteGuardsResponse:
+    """
+    Get all guards for a specific site.
+    Requires authentication.
+
+    Args:
+        site_id: The ID of the site
+    """
+    client = get_client()
+    return await client.get_site_guards(site_id)
+
+
+@mcp.tool()
+async def get_site_patrols(site_id: int, page: int = 1) -> GetSitePatrolsResponse:
     """
     Get paginated patrol records for a specific site.
     Does NOT require authentication.
@@ -130,7 +145,7 @@ async def get_site_patrols(site_id: int, page: int = 1) -> PaginatedResponse[Pat
 
 
 @mcp.tool()
-async def get_site_call_logs(site_id: int, page: int = 1) -> PaginatedResponse[CallLog]:
+async def get_site_call_logs(site_id: int, page: int = 1) -> GetSiteCallLogsResponse:
     """
     Get paginated call logs for a specific site.
     Requires authentication.
@@ -146,7 +161,7 @@ async def get_site_call_logs(site_id: int, page: int = 1) -> PaginatedResponse[C
 @mcp.tool()
 async def get_site_notifications(
     site_id: int, page: int = 1
-) -> PaginatedResponse[dict]:
+) -> GetSiteNotificationsResponse:
     """
     Get paginated notifications for a specific site.
     Requires authentication.
@@ -175,7 +190,7 @@ async def get_site_monthly_score(site_id: int, year: int, month: int) -> str:
 
 
 @mcp.tool()
-async def search_guards(query: str, page: int = 1) -> PaginatedResponse[SecurityGuard]:
+async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
     """
     Search for security guards by name or other criteria.
     Requires authentication.
@@ -189,7 +204,7 @@ async def search_guards(query: str, page: int = 1) -> PaginatedResponse[Security
 
 
 @mcp.tool()
-async def get_guard_patrols(guard_id: int, page: int = 1) -> PaginatedResponse[Patrol]:
+async def get_guard_patrols(guard_id: int, page: int = 1) -> GetGuardPatrolsResponse:
     """
     Get paginated patrol records for a specific security guard.
     Does NOT require authentication.
@@ -233,7 +248,7 @@ async def is_authenticated() -> bool:
 
 
 @mcp.tool()
-async def is_healthy() -> ServerHealthResponse:
+async def is_healthy() -> GetServerHealthResponse:
     """
     Health check endpoint to verify server is running.
     """

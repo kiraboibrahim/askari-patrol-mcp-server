@@ -1,12 +1,5 @@
 """
-Askari Patrol Agent
-
-A reusable agent layer for the Askari Patrol MCP server using Pydantic AI with Groq.
-
-Usage:
-    async with AskariAgent() as agent:
-        response = await agent.run("Show me all sites")
-        print(response)
+Askari Patrol Agent with simple history management
 """
 
 from pydantic_ai import Agent
@@ -18,8 +11,6 @@ from .prompts import SYSTEM_INSTRUCTIONS
 class AskariAgent:
     """
     Reusable agent for Askari Patrol using Pydantic AI with Groq.
-
-    Connects to the MCP server and processes natural language queries.
     """
 
     DEFAULT_INSTRUCTIONS = SYSTEM_INSTRUCTIONS
@@ -36,6 +27,7 @@ class AskariAgent:
 
         self._server: MCPServerStreamableHTTP | None = None
         self._agent: Agent | None = None
+        self._conversation_context: list[dict] = []  # Simple text-only context
 
     async def connect(self):
         """Connect to the MCP server."""
@@ -55,12 +47,39 @@ class AskariAgent:
             self._server = None
             self._agent = None
 
-    async def run(self, message: str) -> str:
+    def _build_context_prompt(self, message: str) -> str:
+        """
+        Build a message that includes conversation context.
+
+        Args:
+            message: Current user message
+
+        Returns:
+            Message with context prepended
+        """
+        if not self._conversation_context:
+            return message
+
+        # Build context from last few exchanges
+        context_parts = []
+        for exchange in self._conversation_context[-3:]:  # Last 3 exchanges
+            context_parts.append(f"User: {exchange['user']}")
+            context_parts.append(f"Assistant: {exchange['assistant']}")
+
+        context_str = "\n".join(context_parts)
+
+        return f"""Previous conversation:
+{context_str}
+
+Current question: {message}"""
+
+    async def run(self, message: str, use_context: bool = True) -> str:
         """
         Process a natural language message.
 
         Args:
             message: User's message
+            use_context: Whether to include previous conversation context
 
         Returns:
             Agent's response
@@ -68,8 +87,31 @@ class AskariAgent:
         if not self._agent:
             raise RuntimeError("Agent not connected. Call connect() first.")
 
-        result = await self._agent.run(message)
+        # Build message with context if requested
+        if use_context and self._conversation_context:
+            enhanced_message = self._build_context_prompt(message)
+        else:
+            enhanced_message = message
+
+        # Run WITHOUT message_history to avoid tool serialization issues
+        result = await self._agent.run(enhanced_message)
+
+        # Store simple text context
+        self._conversation_context.append({"user": message, "assistant": result.output})
+
+        # Keep only last 5 exchanges
+        if len(self._conversation_context) > 5:
+            self._conversation_context = self._conversation_context[-5:]
+
         return result.output
+
+    def clear_context(self):
+        """Clear the conversation context."""
+        self._conversation_context = []
+
+    def get_context(self) -> list[dict]:
+        """Get the current conversation context."""
+        return self._conversation_context.copy()
 
     async def __aenter__(self):
         await self.connect()

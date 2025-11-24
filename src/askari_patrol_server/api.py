@@ -1,13 +1,15 @@
 import httpx
-from common.schemas import (
-    CallLog,
+from common.schemas.response_schemas import (
+    GetGuardPatrolsResponse,
+    GetGuardsResponse,
+    GetSiteCallLogsResponse,
+    GetSiteGuardsResponse,
+    GetSiteNotificationsResponse,
+    GetSitePatrolsResponse,
+    GetSiteShiftsResponse,
+    GetSitesRespnose,
     GetStatsResponse,
     LoginResponse,
-    PaginatedResponse,
-    Patrol,
-    SecurityGuard,
-    Shift,
-    Site,
 )
 from common.utils import is_token_valid
 
@@ -40,33 +42,39 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         resp.raise_for_status()
         return resp.json()
 
-    async def search_sites(
-        self, query: str, page: int | None = 1
-    ) -> PaginatedResponse[Site]:
+    async def search_sites(self, query: str, page: int | None = 1) -> GetSitesRespnose:
         resp = await self.get("/sites", params={"search": query, "page": page})
         resp.raise_for_status()
         return resp.json()
 
-    async def get_sites(self, page: int | None = 1) -> PaginatedResponse[Site]:
+    async def get_sites(self, page: int | None = 1) -> GetSitesRespnose:
         resp = await self.get("/sites", params={"page": page})
         resp.raise_for_status()
         return resp.json()
 
-    async def get_site_shifts(self, site_id: int) -> list[Shift]:
+    async def get_site_shifts(self, site_id: int) -> GetSiteShiftsResponse:
         resp = await self.get(f"/sites/{site_id}/shifts")
         resp.raise_for_status()
         return resp.json()
 
+    async def get_site_guards(self, site_id: int) -> GetSiteGuardsResponse:
+        site_shifts = await self.get_site_shifts(site_id)
+        guards = []
+        for shift in site_shifts:
+            print(shift.securityGuards)
+            guards.extend(shift.securityGuards)
+        return guards
+
     async def get_site_call_logs(
         self, site_id: int, page: int | None = 1
-    ) -> PaginatedResponse[CallLog]:
+    ) -> GetSiteCallLogsResponse:
         resp = await self.get(f"/sites/{site_id}/call-logs", params={"page": page})
         resp.raise_for_status()
         return resp.json()
 
     async def get_site_patrols(
         self, site_id: int, page: int | None = 1
-    ) -> PaginatedResponse[Patrol]:
+    ) -> GetSitePatrolsResponse:
         # No auth required - use fresh client without auth headers
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
@@ -83,14 +91,14 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
 
     async def get_site_notifications(
         self, site_id: int, page: int | None = 1
-    ) -> PaginatedResponse[dict]:
+    ) -> GetSiteNotificationsResponse:
         resp = await self.get(f"/sites/{site_id}/notifications", params={"page": page})
         resp.raise_for_status()
         return resp.json()
 
     async def search_guards(
         self, query: str, page: int | None = 1
-    ) -> PaginatedResponse[SecurityGuard]:
+    ) -> GetGuardsResponse:
         resp = await self.get(
             "/users/security-guards", params={"search": query, "page": page}
         )
@@ -99,7 +107,7 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
 
     async def get_guard_patrols(
         self, guard_id: int, page: int | None = 1
-    ) -> PaginatedResponse[Patrol]:
+    ) -> GetGuardPatrolsResponse:
         # No auth required - use fresh client without auth headers
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
