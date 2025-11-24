@@ -1,5 +1,7 @@
+import os
 from typing import Any
 
+import httpx
 import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
@@ -72,3 +74,43 @@ def decode_token_payload(token: str) -> dict[str, Any] | None:
     except Exception as e:
         print(f"Failed to decode token payload: {e}")
         return None
+
+
+def send_typing_indicator(
+    message_id: str,
+    channel: str = "whatsapp",
+    account_sid: str | None = None,
+    auth_token: str | None = None,
+) -> dict[Any, Any]:
+    """
+    Send a typing indicator via Twilio API.
+
+    Args:
+        message_id: The Twilio message SID to show typing for
+        channel: The messaging channel (default: "whatsapp")
+        account_sid: Twilio Account SID (defaults to TWILIO_ACCOUNT_SID env var)
+        auth_token: Twilio Auth Token (defaults to TWILIO_AUTH_TOKEN env var)
+
+    Returns:
+        Dict containing the API response
+
+    Raises:
+        httpx.HTTPStatusError: If the request fails
+    """
+    account_sid = account_sid or os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = auth_token or os.getenv("TWILIO_AUTH_TOKEN")
+
+    if not account_sid or not auth_token:
+        raise ValueError(
+            "Twilio credentials must be provided or set in environment variables"
+        )
+
+    data = {"messageId": message_id, "channel": channel}
+    response = httpx.post(
+        "https://messaging.twilio.com/v2/Indicators/Typing.json",
+        auth=(account_sid, auth_token),
+        data=data,
+    )
+    response.raise_for_status()
+
+    return response.json()

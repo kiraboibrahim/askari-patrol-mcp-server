@@ -2,11 +2,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from common.utils import send_typing_indicator
 from fastapi import FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 
 from .agent import AskariAgent
@@ -14,29 +14,8 @@ from .agent import AskariAgent
 logger = logging.getLogger("openai.agents")
 logger.setLevel(logging.DEBUG)
 
-twilio_client = Client(
-    os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"]
-)
-
-
-def typing_on(to_number: str):
-    """Send typing indicator to a WhatsApp user."""
-    twilio_client.messages.create(
-        from_=os.environ["TWILIO_WHATSAPP_NUMBER"],
-        to=to_number,
-        type="action",
-        action="typing_on",
-    )
-
-
-def typing_off(to_number: str):
-    """Turn off typing indicator for a WhatsApp user."""
-    twilio_client.messages.create(
-        from_=os.environ["TWILIO_WHATSAPP_NUMBER"],
-        to=to_number,
-        type="action",
-        action="typing_off",
-    )
+TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
+TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
 
 
 async def is_mcp_server_healthy(mcp_server_url: str) -> bool:
@@ -59,7 +38,7 @@ def check_missing_env_vars() -> list:
         "TWILIO_ACCOUNT_SID",
         "TWILIO_AUTH_TOKEN",
         "TWILIO_WHATSAPP_NUMBER",
-        "OPENAI_API_KEY",
+        "GROQ_API_KEY",
     ]
     missing_env_vars = [var for var in required_env_vars if not os.environ.get(var)]
     env_ok = not missing_env_vars
@@ -89,12 +68,19 @@ def create_app(
     async def webhook(
         From: str = Form(...),
         Body: str = Form(...),
+        MessageSid: str = Form(...),
     ):
         """Handle incoming Twilio WhatsApp messages."""
         # phone = From.replace("whatsapp:", "")
-        typing_on(From)
+        try:
+            # This feature is still in beta and thus not stable, if any errors occur, don't halt process
+            send_typing_indicator(
+                MessageSid, account_sid=TWILIO_ACCOUNT_SID, auth_token=TWILIO_AUTH_TOKEN
+            )
+        except Exception:
+            pass
+
         response_text = await agent.run(Body)
-        typing_off(From)
 
         twiml = MessagingResponse()
         twiml.message(response_text)
@@ -127,8 +113,11 @@ def main():
 
     import uvicorn
 
+    from .prompts import WHATSAPP_CLIENT_INSTRUCTIONS
+
     app = create_app(
-        mcp_server_url=os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
+        mcp_server_url=os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp"),
+        instructions=WHATSAPP_CLIENT_INSTRUCTIONS,
     )
     uvicorn.run(app, host="0.0.0.0", port=8001)
 
