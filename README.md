@@ -52,3 +52,34 @@ make server
 # Open second terminal(tab)
 make chat
 ```
+
+## Running WhatsApp Client
+
+```bash
+# Create a .env file from the .env.example
+cp .env.example .env
+
+# Populate with variables
+```
+### Running Server and Client
+
+1. Open terminal and enter the following command
+
+```bash
+make server
+```
+2. Open a second terminal/tab and enter the following command
+
+```bash
+make whatsapp
+```
+3. You will need to expose the whatsapp client to the web
+
+```bash
+ngrok http 8001
+```
+4. Configure webhook using the given ngrok tunnel url i.e If ngrok has provided `hemicranic-moneyerately-herta.ngrok-free.dev` then the webhook url should be: `https://hemicranic-moneyerately-herta.ngrok-free.dev/webhook`
+
+5. Head over to twilio and set the webhook url
+
+6. Send your first message to the bot!!!!
