@@ -83,3 +83,10 @@ ngrok http 8001
 5. Head over to twilio and set the webhook url
 
 6. Send your first message to the bot!!!!
+
+
+## Challenges
+* WhatsApp formatting is limited i.e Tabular data can't be properly displayed in WhatsApp
+* There is a 1600 character limit on for WhatsApp body, meaning large responses will fail
+* Rate Limit Exceeded: We tend to hit so may rate lmits most especially the TPM(Tokens Per Minute) due to the voliminous responses
+* Instant Responses when clients send messages(Responses are generated on the fly when a request from a client comes in). I believe, we need a task queue to handle client messages
