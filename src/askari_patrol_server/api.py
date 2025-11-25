@@ -61,8 +61,7 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         site_shifts = await self.get_site_shifts(site_id)
         guards = []
         for shift in site_shifts:
-            print(shift.securityGuards)
-            guards.extend(shift.securityGuards)
+            guards.extend(shift["securityGuards"])
         return guards
 
     async def get_site_call_logs(
