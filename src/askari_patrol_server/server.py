@@ -92,7 +92,7 @@ async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
 
 
 @mcp.tool()
-async def get_sites(page: int = 1) -> GetStatsResponse:
+async def get_sites(page: int = 1) -> GetSitesRespnose:
     """
     Get a paginated list of all sites.
     Requires authentication.

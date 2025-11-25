@@ -26,7 +26,7 @@ class BaseSite(BaseModel):
     latitude: str
     longitude: str
     phoneNumber: str
-    requiredPatrolsPerGuard: int
+    requiredPatrolsPerGuard: int | None = None
     notificationsEnabled: bool
     notificationCycle: str | None
     ownerUserId: int | None = None
