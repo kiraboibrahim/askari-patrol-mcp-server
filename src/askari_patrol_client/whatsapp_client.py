@@ -3,19 +3,25 @@ import os
 from contextlib import asynccontextmanager
 
 from common.utils import send_typing_indicator
-from fastapi import FastAPI, Form
+from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from twilio.twiml.messaging_response import MessagingResponse
+from twilio.rest import Client
 
 from .agent import AskariAgent
+from .prompts import WHATSAPP_CLIENT_INSTRUCTIONS
 
-logger = logging.getLogger("openai.agents")
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
 TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
+TWILIO_WHATSAPP_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
+MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
+
+
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
 async def is_mcp_server_healthy(mcp_server_url: str) -> bool:
@@ -24,16 +30,13 @@ async def is_mcp_server_healthy(mcp_server_url: str) -> bool:
         write_stream,
         _,
     ):
-        # Create a session using the client streams
         async with ClientSession(read_stream, write_stream) as session:
-            # Initialize the connection
             await session.initialize()
-            # Call the is_healthy tool
             result = await session.call_tool("is_healthy", {})
             return result.get("status") == "ok"
 
 
-def check_missing_env_vars() -> list:
+def check_missing_env_vars() -> tuple[list, bool]:
     required_env_vars = [
         "TWILIO_ACCOUNT_SID",
         "TWILIO_AUTH_TOKEN",
@@ -45,54 +48,119 @@ def check_missing_env_vars() -> list:
     return missing_env_vars, env_ok
 
 
-def create_app(
-    mcp_server_url: str = "http://localhost:8000/mcp",
-    instructions: str = None,
-):
-    """Create FastAPI app with Twilio WhatsApp webhook."""
+class SessionManager:
+    """Maintains one persistent AskariAgent per phone number."""
 
-    agent = AskariAgent(
-        server_url=mcp_server_url,
-        instructions=instructions or AskariAgent.DEFAULT_INSTRUCTIONS,
+    def __init__(self, mcp_server_url: str, instructions: str):
+        self.mcp_server_url = mcp_server_url
+        self.instructions = instructions
+        self.sessions: dict[str, AskariAgent] = {}
+
+    async def get_or_create_session(self, phone_number: str) -> AskariAgent:
+        """Get or create a long-lived AskariAgent."""
+        if phone_number not in self.sessions:
+            logger.info(f"Creating new agent session for {phone_number}")
+            agent = AskariAgent(
+                server_url=self.mcp_server_url,
+                instructions=self.instructions,
+            )
+            await agent.connect()
+            self.sessions[phone_number] = agent
+
+        return self.sessions[phone_number]
+
+    async def close_all(self):
+        """Gracefully close all MCP connections."""
+        for pn, agent in list(self.sessions.items()):
+            try:
+                await agent.disconnect()
+            except Exception as e:
+                logger.error(f"Error closing session for {pn}: {e}")
+        self.sessions.clear()
+
+
+async def process_message_task(
+    agent: AskariAgent,
+    phone_number: str,
+    message: str,
+    message_sid: str,
+):
+    """
+    Runs in background (inside same FastAPI process).
+    Uses the persistent agent from SessionManager.
+    """
+
+    # Send WhatsApp typing indicator
+    try:
+        send_typing_indicator(
+            message_sid,
+            account_sid=TWILIO_ACCOUNT_SID,
+            auth_token=TWILIO_AUTH_TOKEN,
+        )
+    except Exception as e:
+        logger.warning(f"Typing indicator failed: {e}")
+
+    # Run message through the persistent agent (with context)
+    try:
+        response_text = await agent.run(message)
+    except Exception as e:
+        logger.error(f"Agent processing error: {e}")
+        response_text = "I encountered an error processing your message."
+
+    # Send WhatsApp reply
+    twilio_client.messages.create(
+        from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+        body=response_text,
+        to=f"whatsapp:{phone_number}",
+    )
+    logger.info(f"Sent response to {phone_number}")
+
+
+def create_app():
+    session_manager = SessionManager(
+        mcp_server_url=MCP_SERVER_URL,
+        instructions=WHATSAPP_CLIENT_INSTRUCTIONS,
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        await agent.connect()
         yield
-        await agent.disconnect()
+        await session_manager.close_all()
 
     app = FastAPI(title="Askari WhatsApp Bot", lifespan=lifespan)
 
     @app.post("/webhook")
     async def webhook(
+        background_tasks: BackgroundTasks,
         From: str = Form(...),
         Body: str = Form(...),
         MessageSid: str = Form(...),
     ):
-        """Handle incoming Twilio WhatsApp messages."""
-        # phone = From.replace("whatsapp:", "")
-        try:
-            # This feature is still in beta and thus not stable, if any errors occur, don't halt process
-            send_typing_indicator(
-                MessageSid, account_sid=TWILIO_ACCOUNT_SID, auth_token=TWILIO_AUTH_TOKEN
-            )
-        except Exception:
-            pass
+        phone_number = From.replace("whatsapp:", "")
 
-        response_text = await agent.run(Body)
+        # Retrieve existing agent or create new one
+        agent = await session_manager.get_or_create_session(phone_number)
 
-        twiml = MessagingResponse()
-        twiml.message(response_text)
-        return PlainTextResponse(str(twiml), media_type="application/xml")
+        # Push message processing into background task
+        background_tasks.add_task(
+            process_message_task,
+            agent,
+            phone_number,
+            Body,
+            MessageSid,
+        )
+
+        # Respond instantly to Twilio (empty XML)
+        return PlainTextResponse("", media_type="application/xml")
 
     @app.get("/health")
     async def health():
         missing_env_vars, env_ok = check_missing_env_vars()
         try:
-            mcp_ok = await is_mcp_server_healthy(mcp_server_url)
+            mcp_ok = await is_mcp_server_healthy(MCP_SERVER_URL)
         except Exception:
             mcp_ok = False
+
         status_code = 200 if env_ok and mcp_ok else 503
 
         return JSONResponse(
@@ -109,16 +177,9 @@ def create_app(
 
 
 def main():
-    import os
-
     import uvicorn
 
-    from .prompts import WHATSAPP_CLIENT_INSTRUCTIONS
-
-    app = create_app(
-        mcp_server_url=os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp"),
-        instructions=WHATSAPP_CLIENT_INSTRUCTIONS,
-    )
+    app = create_app()
     uvicorn.run(app, host="0.0.0.0", port=8001)
 
 

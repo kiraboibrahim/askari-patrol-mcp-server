@@ -19,7 +19,7 @@ class AskariAgent:
         self,
         server_url: str = "http://localhost:8000/mcp",
         instructions: str = SYSTEM_INSTRUCTIONS,
-        model: str = "groq:openai/gpt-oss-120b",
+        model: str = "groq:openai/gpt-oss-20b",
     ):
         self.server_url = server_url
         self.instructions = instructions
