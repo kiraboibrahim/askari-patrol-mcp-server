@@ -2,7 +2,7 @@ services:
   server:
     build: .
     ports:
-      - "0.0.0.0:8000:8000"
+      - "8000:8000"
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
 

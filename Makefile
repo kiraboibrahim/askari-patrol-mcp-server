@@ -30,15 +30,15 @@ test-cov:
 
 # Lint code
 lint:
-	uv run ruff check src tests
+	uv run ruff check src scripts
 
 # Format code
 format:
-	uv run ruff format src tests
+	uv run ruff format src scripts
 
 # Fix lint issues
 fix:
-	uv run ruff check --fix src tests
+	uv run ruff check --fix src scripts
 
 # Install dependencies
 install:

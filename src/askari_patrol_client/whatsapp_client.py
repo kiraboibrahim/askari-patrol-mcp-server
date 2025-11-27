@@ -2,11 +2,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import rollbar
 from common.utils import send_typing_indicator
 from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from rollbar.contrib.fastapi import add_to as rollbar_add_to
 from twilio.rest import Client
 
 from .agent import AskariAgent
@@ -19,6 +21,7 @@ TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
 TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
 TWILIO_WHATSAPP_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
+ROLLBAR_SERVER_TOKEN = os.environ.get("ROLLBAR_SERVER_TOKEN")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
@@ -126,7 +129,17 @@ def create_app():
         yield
         await session_manager.close_all()
 
+    # Initialize Rollbar SDK with your server-side access token
+    if ROLLBAR_SERVER_TOKEN:
+        rollbar.init(ROLLBAR_SERVER_TOKEN)
+    else:
+        logger.warning(
+            "Failed to initialize rollbar due to missing rollbar server side access token. Ensure ROLLBAR_SERVER_TOKEN env variable is set"
+        )
+
     app = FastAPI(title="Askari WhatsApp Bot", lifespan=lifespan)
+    if ROLLBAR_SERVER_TOKEN:
+        rollbar_add_to(app)
 
     @app.post("/webhook")
     async def webhook(
@@ -171,6 +184,10 @@ def create_app():
             },
             status_code=status_code,
         )
+
+    @app.get("/error")
+    async def read_error():
+        return 1 / 0
 
     return app
 

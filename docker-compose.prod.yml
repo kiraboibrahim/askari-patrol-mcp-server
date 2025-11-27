@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  server:
+    image: harmless138/dojohub:askariagent-1.0.0
+    ports:
+      - "9000:8000"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+    restart: unless-stopped
+
+  whatsapp:
+    image: harmless138/dojohub:askariagent-1.0.0
+    ports:
+      - "9001:8001"
+    command: uv run python -m askari_patrol_client.whatsapp_client
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://server:8000/mcp}
+    restart: unless-stopped
+    depends_on:
+      - server
