@@ -20,7 +20,6 @@ TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
 TWILIO_WHATSAPP_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
 
-
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 

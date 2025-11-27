@@ -19,7 +19,9 @@ from mcp.server.fastmcp import FastMCP
 
 from .api import AskariPatrolAsyncClient
 
-mcp = FastMCP(name="Askari Patrol MCP Server")
+mcp = FastMCP(
+    name="Askari Patrol MCP Server",
+)
 
 
 @dataclass
@@ -255,5 +257,9 @@ async def is_healthy() -> GetServerHealthResponse:
     return {"status": "ok"}
 
 
+app = mcp.streamable_http_app()
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", mount_path="/mcp")
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

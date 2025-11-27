@@ -31,7 +31,10 @@ class AskariAgent:
 
     async def connect(self):
         """Connect to the MCP server."""
+        print("=" * 100)
+        print(self.server_url)
         self._server = MCPServerStreamableHTTP(self.server_url)
+
         await self._server.__aenter__()
 
         self._agent = Agent(
