@@ -22,6 +22,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://server:8000/mcp}
+      - ROLLBAR_SERVER_TOKEN=${ROLLBAR_SERVER_TOKEN}
     volumes:
       - ./src:/app/src
       - ./scripts:/app/scripts

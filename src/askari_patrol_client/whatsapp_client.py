@@ -12,7 +12,7 @@ from rollbar.contrib.fastapi import add_to as rollbar_add_to
 from twilio.rest import Client
 
 from .agent import AskariAgent
-from .prompts import WHATSAPP_CLIENT_INSTRUCTIONS
+from .prompts import WHATSAPP_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -121,7 +121,7 @@ async def process_message_task(
 def create_app():
     session_manager = SessionManager(
         mcp_server_url=MCP_SERVER_URL,
-        instructions=WHATSAPP_CLIENT_INSTRUCTIONS,
+        instructions=WHATSAPP_SYSTEM_PROMPT,
     )
 
     @asynccontextmanager

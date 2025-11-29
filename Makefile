@@ -52,10 +52,10 @@ clean:
 
 # Docker
 docker-up:
-	docker-compose up --build
+	docker compose up --build
 
 docker-down:
-	docker-compose down
+	docker compose down
 
 dev:
 	make -j2 server whatsapp

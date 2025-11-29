@@ -5,7 +5,7 @@ Askari Patrol Agent with simple history management
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
 
-from .prompts import SYSTEM_INSTRUCTIONS
+from .prompts import CLI_SYSTEM_PROMPT
 
 
 class AskariAgent:
@@ -13,12 +13,12 @@ class AskariAgent:
     Reusable agent for Askari Patrol using Pydantic AI with Groq.
     """
 
-    DEFAULT_INSTRUCTIONS = SYSTEM_INSTRUCTIONS
+    DEFAULT_INSTRUCTIONS = CLI_SYSTEM_PROMPT
 
     def __init__(
         self,
         server_url: str = "http://localhost:8000/mcp",
-        instructions: str = SYSTEM_INSTRUCTIONS,
+        instructions: str = CLI_SYSTEM_PROMPT,
         model: str = "groq:openai/gpt-oss-20b",
     ):
         self.server_url = server_url
@@ -31,8 +31,6 @@ class AskariAgent:
 
     async def connect(self):
         """Connect to the MCP server."""
-        print("=" * 100)
-        print(self.server_url)
         self._server = MCPServerStreamableHTTP(self.server_url)
 
         await self._server.__aenter__()
