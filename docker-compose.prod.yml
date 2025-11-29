@@ -7,6 +7,7 @@ services:
       - "9000:8000"
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
+      ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
     restart: unless-stopped
 
   whatsapp:

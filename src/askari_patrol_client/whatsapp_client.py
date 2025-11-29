@@ -1,8 +1,10 @@
 import logging
 import os
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
-import rollbar
+from common.rollbar_config import initialize_rollbar
 from common.utils import send_typing_indicator
 from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -23,7 +25,55 @@ TWILIO_WHATSAPP_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
 ROLLBAR_SERVER_TOKEN = os.environ.get("ROLLBAR_SERVER_TOKEN")
 
+# Rate limiting configuration
+RATE_LIMIT_MESSAGES = int(
+    os.environ.get("RATE_LIMIT_MESSAGES", "10")
+)  # messages per window
+RATE_LIMIT_WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))  # seconds
+
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter per phone number."""
+
+    def __init__(self, max_messages: int, window_seconds: int):
+        self.max_messages = max_messages
+        self.window_seconds = window_seconds
+        self.message_timestamps: dict[str, list[float]] = defaultdict(list)
+
+    def is_rate_limited(self, phone_number: str) -> bool:
+        """Check if phone number has exceeded rate limit."""
+        now = time.time()
+
+        # Get timestamps for this phone number
+        timestamps = self.message_timestamps[phone_number]
+
+        # Remove timestamps outside the current window
+        cutoff = now - self.window_seconds
+        timestamps[:] = [ts for ts in timestamps if ts > cutoff]
+
+        # Check if limit exceeded
+        if len(timestamps) >= self.max_messages:
+            return True
+
+        # Add current timestamp
+        timestamps.append(now)
+        return False
+
+    def get_remaining_time(self, phone_number: str) -> int:
+        """Get seconds until rate limit resets."""
+        if phone_number not in self.message_timestamps:
+            return 0
+
+        timestamps = self.message_timestamps[phone_number]
+        if not timestamps:
+            return 0
+
+        oldest = min(timestamps)
+        elapsed = time.time() - oldest
+        remaining = max(0, self.window_seconds - elapsed)
+        return int(remaining)
 
 
 async def is_mcp_server_healthy(mcp_server_url: str) -> bool:
@@ -57,6 +107,7 @@ class SessionManager:
         self.mcp_server_url = mcp_server_url
         self.instructions = instructions
         self.sessions: dict[str, AskariAgent] = {}
+        self.processing: set[str] = set()
 
     async def get_or_create_session(self, phone_number: str) -> AskariAgent:
         """Get or create a long-lived AskariAgent."""
@@ -70,6 +121,18 @@ class SessionManager:
             self.sessions[phone_number] = agent
 
         return self.sessions[phone_number]
+
+    def is_processing(self, phone_number: str) -> bool:
+        """Check if a message is currently being processed for this number."""
+        return phone_number in self.processing
+
+    def start_processing(self, phone_number: str):
+        """Mark that processing has started for this number."""
+        self.processing.add(phone_number)
+
+    def finish_processing(self, phone_number: str):
+        """Mark that processing has finished for this number."""
+        self.processing.discard(phone_number)
 
     async def close_all(self):
         """Gracefully close all MCP connections."""
@@ -86,36 +149,59 @@ async def process_message_task(
     phone_number: str,
     message: str,
     message_sid: str,
+    session_manager: SessionManager,
+    rate_limiter: RateLimiter,
+    num_media: int,
 ):
     """
     Runs in background (inside same FastAPI process).
     Uses the persistent agent from SessionManager.
     """
 
-    # Send WhatsApp typing indicator
     try:
-        send_typing_indicator(
-            message_sid,
-            account_sid=TWILIO_ACCOUNT_SID,
-            auth_token=TWILIO_AUTH_TOKEN,
+        # Mark as processing
+        session_manager.start_processing(phone_number)
+
+        # Send WhatsApp typing indicator first
+        try:
+            send_typing_indicator(
+                message_sid,
+                account_sid=TWILIO_ACCOUNT_SID,
+                auth_token=TWILIO_AUTH_TOKEN,
+            )
+        except Exception as e:
+            logger.warning(f"Typing indicator failed: {e}")
+
+        # Check for media attachments
+        if num_media > 0:
+            logger.info(f"Rejected media message from {phone_number}")
+            response_text = "⚠️ Sorry, I can only process text messages. Please send your request as text."
+
+        # Check rate limit
+        elif rate_limiter.is_rate_limited(phone_number):
+            remaining_time = rate_limiter.get_remaining_time(phone_number)
+            logger.warning(f"Rate limit exceeded for {phone_number}")
+            response_text = f"⚠️ You've reached the message limit. Please wait {remaining_time} seconds before sending more messages."
+
+        # Process the message
+        else:
+            try:
+                response_text = await agent.run(message)
+            except Exception as e:
+                logger.error(f"Agent processing error: {e}")
+                response_text = "I encountered an error processing your message."
+
+        # Send WhatsApp reply
+        twilio_client.messages.create(
+            from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+            body=response_text,
+            to=f"whatsapp:{phone_number}",
         )
-    except Exception as e:
-        logger.warning(f"Typing indicator failed: {e}")
+        logger.info(f"Sent response to {phone_number}")
 
-    # Run message through the persistent agent (with context)
-    try:
-        response_text = await agent.run(message)
-    except Exception as e:
-        logger.error(f"Agent processing error: {e}")
-        response_text = "I encountered an error processing your message."
-
-    # Send WhatsApp reply
-    twilio_client.messages.create(
-        from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
-        body=response_text,
-        to=f"whatsapp:{phone_number}",
-    )
-    logger.info(f"Sent response to {phone_number}")
+    finally:
+        # Always mark as finished, even if there was an error
+        session_manager.finish_processing(phone_number)
 
 
 def create_app():
@@ -124,21 +210,20 @@ def create_app():
         instructions=WHATSAPP_SYSTEM_PROMPT,
     )
 
+    rate_limiter = RateLimiter(
+        max_messages=RATE_LIMIT_MESSAGES,
+        window_seconds=RATE_LIMIT_WINDOW,
+    )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
         await session_manager.close_all()
 
-    # Initialize Rollbar SDK with your server-side access token
-    if ROLLBAR_SERVER_TOKEN:
-        rollbar.init(ROLLBAR_SERVER_TOKEN)
-    else:
-        logger.warning(
-            "Failed to initialize rollbar due to missing rollbar server side access token. Ensure ROLLBAR_SERVER_TOKEN env variable is set"
-        )
+    is_rollbar_initialized = initialize_rollbar()
 
     app = FastAPI(title="Askari WhatsApp Bot", lifespan=lifespan)
-    if ROLLBAR_SERVER_TOKEN:
+    if is_rollbar_initialized:
         rollbar_add_to(app)
 
     @app.post("/webhook")
@@ -147,19 +232,34 @@ def create_app():
         From: str = Form(...),
         Body: str = Form(...),
         MessageSid: str = Form(...),
+        NumMedia: int = Form(0),
     ):
         phone_number = From.replace("whatsapp:", "")
+
+        # Check if already processing a message for this user
+        if session_manager.is_processing(phone_number):
+            logger.info(f"Message already being processed for {phone_number}")
+            twilio_client.messages.create(
+                from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+                body="⏳ Please wait, I'm still processing your previous message.",
+                to=f"whatsapp:{phone_number}",
+            )
+            return PlainTextResponse("", media_type="application/xml")
 
         # Retrieve existing agent or create new one
         agent = await session_manager.get_or_create_session(phone_number)
 
         # Push message processing into background task
+        # All validation (media, rate limit) happens inside the task after typing indicator
         background_tasks.add_task(
             process_message_task,
             agent,
             phone_number,
             Body,
             MessageSid,
+            session_manager,
+            rate_limiter,
+            NumMedia,
         )
 
         # Respond instantly to Twilio (empty XML)

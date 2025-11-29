@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from common.rollbar_config import initialize_rollbar
 from common.schemas.response_schemas import (
     GetGuardPatrolsResponse,
     GetGuardsResponse,
@@ -18,10 +19,7 @@ from common.schemas.response_schemas import (
 from mcp.server.fastmcp import FastMCP
 
 from .api import AskariPatrolAsyncClient
-
-mcp = FastMCP(
-    name="Askari Patrol MCP Server",
-)
+from .decorators.track_errors import track_errors
 
 
 @dataclass
@@ -35,10 +33,14 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     yield {}
 
 
+is_rollbar_initialzed = initialize_rollbar()
+
 mcp = FastMCP(
     "Askari Patrol",
     instructions="MCP server for Askari Patrol guard tour management system. "
     "Provides tools to manage sites, security guards, patrols, shifts, and call logs.",
+    host="0.0.0.0",
+    port=9000,
     lifespan=app_lifespan,
 )
 
@@ -55,6 +57,7 @@ def get_client() -> AskariPatrolAsyncClient:
 
 
 @mcp.tool()
+@track_errors()
 async def login(username: str, password: str) -> LoginResponse:
     """
     Authenticate with the Askari Patrol API.
@@ -70,6 +73,7 @@ async def login(username: str, password: str) -> LoginResponse:
 
 
 @mcp.tool()
+@track_errors()
 async def get_stats() -> GetStatsResponse:
     """
     Get overall statistics including counts of companies, admins, guards, sites, and tags.
@@ -80,6 +84,7 @@ async def get_stats() -> GetStatsResponse:
 
 
 @mcp.tool()
+@track_errors()
 async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
     """
     Search for sites by name or other criteria.
@@ -94,6 +99,7 @@ async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
 
 
 @mcp.tool()
+@track_errors()
 async def get_sites(page: int = 1) -> GetSitesRespnose:
     """
     Get a paginated list of all sites.
@@ -107,6 +113,7 @@ async def get_sites(page: int = 1) -> GetSitesRespnose:
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_shifts(site_id: int) -> GetSiteShiftsResponse:
     """
     Get all shifts for a specific site.
@@ -120,6 +127,7 @@ async def get_site_shifts(site_id: int) -> GetSiteShiftsResponse:
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_guards(site_id: int) -> GetSiteGuardsResponse:
     """
     Get all guards for a specific site.
@@ -133,6 +141,7 @@ async def get_site_guards(site_id: int) -> GetSiteGuardsResponse:
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_patrols(site_id: int, page: int = 1) -> GetSitePatrolsResponse:
     """
     Get paginated patrol records for a specific site.
@@ -147,6 +156,7 @@ async def get_site_patrols(site_id: int, page: int = 1) -> GetSitePatrolsRespons
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_call_logs(site_id: int, page: int = 1) -> GetSiteCallLogsResponse:
     """
     Get paginated call logs for a specific site.
@@ -161,6 +171,7 @@ async def get_site_call_logs(site_id: int, page: int = 1) -> GetSiteCallLogsResp
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_notifications(
     site_id: int, page: int = 1
 ) -> GetSiteNotificationsResponse:
@@ -177,6 +188,7 @@ async def get_site_notifications(
 
 
 @mcp.tool()
+@track_errors()
 async def get_site_monthly_score(site_id: int, year: int, month: int) -> str:
     """
     Get the monthly performance score for a specific site.
@@ -192,6 +204,7 @@ async def get_site_monthly_score(site_id: int, year: int, month: int) -> str:
 
 
 @mcp.tool()
+@track_errors()
 async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
     """
     Search for security guards by name or other criteria.
@@ -206,6 +219,7 @@ async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
 
 
 @mcp.tool()
+@track_errors()
 async def get_guard_patrols(guard_id: int, page: int = 1) -> GetGuardPatrolsResponse:
     """
     Get paginated patrol records for a specific security guard.
@@ -220,6 +234,7 @@ async def get_guard_patrols(guard_id: int, page: int = 1) -> GetGuardPatrolsResp
 
 
 @mcp.tool()
+@track_errors()
 async def logout() -> dict:
     """
     Logout and clear the client session.
@@ -236,6 +251,7 @@ async def logout() -> dict:
 
 
 @mcp.tool()
+@track_errors()
 async def is_authenticated() -> bool:
     """
     Check if the current session is authenticated.
@@ -250,16 +266,17 @@ async def is_authenticated() -> bool:
 
 
 @mcp.tool()
+@track_errors()
 async def is_healthy() -> GetServerHealthResponse:
     """
     Health check endpoint to verify server is running.
     """
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+    }
 
 
 app = mcp.streamable_http_app()
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    mcp.run(transport="streamable-http")
