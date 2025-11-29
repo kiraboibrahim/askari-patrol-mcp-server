@@ -190,7 +190,7 @@ async def process_message_task(
                 response_text = await agent.run(message)
             except Exception as e:
                 logger.error(f"Agent processing error: {e}")
-                await report_error_to_rollbar_async()
+                await report_error_to_rollbar_async(exc=e)
                 response_text = "I encountered an error processing your message."
 
         # Send WhatsApp reply

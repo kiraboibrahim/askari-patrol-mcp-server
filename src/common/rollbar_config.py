@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from typing import Any
 
 import rollbar
 
@@ -26,11 +27,37 @@ def initialize_rollbar():
     return True
 
 
-async def report_error_to_rollbar_async():
-    """Report the current exception to Rollbar without blocking the event loop."""
+async def report_error_to_rollbar_async(
+    exc: Exception = None,
+    level: str = "error",
+    extra_data: dict[str, Any] = None,
+    payload_data: dict[str, Any] = None,
+):
+    """
+    Report an exception to Rollbar asynchronously.
+
+    Parameters:
+        exc: Optional exception object. If None, uses the current exception in context.
+        level: Rollbar level ("error", "warning", "info", "critical")
+        extra_data: Dict of additional metadata
+        payload_data: Dict to pass directly to Rollbar payload
+    """
+
+    def _report():
+        if exc:
+            rollbar.report_exc_info(
+                (type(exc), exc, exc.__traceback__),
+                extra_data=extra_data,
+                payload_data=payload_data,
+                level=level,
+            )
+        else:
+            rollbar.report_exc_info(
+                extra_data=extra_data, payload_data=payload_data, level=level
+            )
+
     try:
         if ROLLBAR_SERVER_TOKEN:
-            # Run Rollbar's sync call in a background thread
-            await asyncio.to_thread(rollbar.report_exc_info)
+            await asyncio.to_thread(_report)
     except Exception as e:
         print(f"Rollbar reporting failed: {e}")
