@@ -1,4 +1,3 @@
-# core/rollbar_config.py
 import logging
 import os
 

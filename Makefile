@@ -1,4 +1,4 @@
-.PHONY: server whatsapp test lint format clean docker-up docker-down
+.PHONY: server whatsapp test lint format clean docker-up docker-down docker-build docker-push
 
 PYTHONPATH := src
 
@@ -56,6 +56,12 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+docker-build:
+	docker build -t harmless138/dojohub:askariagent-1.0.0 .
+
+docker-push:
+	docker push harmless138/dojohub:askariagent-1.0.0
 
 dev:
 	make -j2 server whatsapp
