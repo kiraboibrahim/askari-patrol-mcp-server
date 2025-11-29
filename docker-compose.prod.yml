@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   server:
     image: harmless138/dojohub:askariagent-1.0.0

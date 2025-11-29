@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 
-from common.rollbar_config import initialize_rollbar
+from common.rollbar_config import initialize_rollbar, report_error_to_rollbar_async
 from common.utils import send_typing_indicator
 from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -29,6 +29,7 @@ ROLLBAR_SERVER_TOKEN = os.environ.get("ROLLBAR_SERVER_TOKEN")
 RATE_LIMIT_MESSAGES = int(
     os.environ.get("RATE_LIMIT_MESSAGES", "10")
 )  # messages per window
+
 RATE_LIMIT_WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))  # seconds
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -189,6 +190,7 @@ async def process_message_task(
                 response_text = await agent.run(message)
             except Exception as e:
                 logger.error(f"Agent processing error: {e}")
+                await report_error_to_rollbar_async()
                 response_text = "I encountered an error processing your message."
 
         # Send WhatsApp reply
