@@ -279,4 +279,7 @@ async def is_healthy() -> GetServerHealthResponse:
 app = mcp.streamable_http_app()
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    try:
+        mcp.run(transport="streamable-http")
+    except KeyboardInterrupt:
+        print("👋 Program stopped by user. Goodbye!")
