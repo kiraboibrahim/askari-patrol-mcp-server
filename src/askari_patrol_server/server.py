@@ -40,7 +40,7 @@ mcp = FastMCP(
     instructions="MCP server for Askari Patrol guard tour management system. "
     "Provides tools to manage sites, security guards, patrols, shifts, and call logs.",
     host="0.0.0.0",
-    port=9000,
+    port=8000,
     lifespan=app_lifespan,
 )
 
