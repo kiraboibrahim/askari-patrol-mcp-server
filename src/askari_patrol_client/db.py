@@ -7,11 +7,12 @@ agent history.
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
 
-DB_PATH = "conversations.db"
+DB_PATH = "data/conversations.db"
 
 # Initialize logger for database operations
 logger = logging.getLogger(__name__)
@@ -23,6 +24,15 @@ class ConversationDB:
 
     This class provides methods to initialize the database, save messages,
     load history, and clear records for specific users.
+
+    Attributes:
+        db_path (str): Path to the SQLite database file
+        _initialized (bool): Whether the database schema has been created
+
+    Example:
+        >>> db = ConversationDB()
+        >>> await db.save_message("+1234567890", '{"kind":"request",...}')
+        >>> messages = await db.load_history("+1234567890", limit=10)
     """
 
     def __init__(self, db_path: str = DB_PATH):
@@ -30,11 +40,39 @@ class ConversationDB:
         Initialize the ConversationDB.
 
         Args:
-            db_path: File path to the SQLite database. Defaults to 'conversations.db'
+            db_path: File path to the SQLite database. Defaults to 'data/conversations.db'
                 in the project root.
+
+        Side Effects:
+            Creates the parent directory for the database if it doesn't exist
         """
         self.db_path = db_path
         self._initialized = False
+        self._ensure_db_directory()
+
+    def _ensure_db_directory(self) -> None:
+        """
+        Create the database directory if it doesn't exist.
+
+        Side Effects:
+            Creates parent directories as needed with appropriate permissions
+
+        Raises:
+            OSError: If directory creation fails due to permissions
+
+        Example:
+            >>> db = ConversationDB("data/conversations.db")
+            # Creates 'data/' directory if it doesn't exist
+        """
+        db_dir = Path(self.db_path).parent
+
+        if db_dir != Path(".") and not db_dir.exists():
+            try:
+                db_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created database directory: {db_dir}")
+            except OSError as e:
+                logger.error(f"Failed to create database directory {db_dir}: {e}")
+                raise
 
     async def initialize(self):
         """
@@ -43,6 +81,17 @@ class ConversationDB:
         This method sets up the 'conversation_messages' table with columns for
         phone number, timestamp, and full message JSON.
         It also creates an index on phone_number and timestamp for performance.
+
+        Side Effects:
+            - Enables WAL mode for better concurrency
+            - Creates conversation_messages table if not exists
+            - Creates index on (phone_number, timestamp)
+            - Sets self._initialized to True
+
+        Example:
+            >>> db = ConversationDB()
+            >>> await db.initialize()
+            # Database schema ready
         """
         if self._initialized:
             return
@@ -83,12 +132,22 @@ class ConversationDB:
         Retrieve recent conversation history for a specific phone number.
 
         Args:
-            phone_number: The identifier for the user.
-            limit: Maximum number of recent messages to retrieve.
+            phone_number: The identifier for the user (E.164 format)
+            limit: Maximum number of recent messages to retrieve
 
         Returns:
             A list of dictionary objects representing message rows,
-            ordered chronologically (oldest first).
+            ordered chronologically (oldest first). Each dict contains:
+            - message_json: Serialized ModelMessage JSON string
+            - timestamp: ISO-8601 timestamp string
+
+        Example:
+            >>> messages = await db.load_history("+1234567890", limit=10)
+            >>> for msg in messages:
+            ...     print(msg['message_json'])
+
+        Note:
+            Returns empty list if no messages found or database error occurs
         """
         await self.initialize()
 
@@ -122,8 +181,21 @@ class ConversationDB:
         Save a single conversation message to the database.
 
         Args:
-            phone_number: The user identifier.
-            message_json: Full JSON serialization of the ModelMessage.
+            phone_number: The user identifier (E.164 format)
+            message_json: Full JSON serialization of the ModelMessage
+
+        Side Effects:
+            - Ensures database is initialized
+            - Inserts new row into conversation_messages table
+
+        Raises:
+            sqlite3.Error: If database operation fails
+
+        Example:
+            >>> await db.save_message(
+            ...     phone_number="+1234567890",
+            ...     message_json='{"kind":"request","parts":[...]}'
+            ... )
         """
         await self.initialize()
 
@@ -142,8 +214,19 @@ class ConversationDB:
         Atomically save a batch of messages to the database.
 
         Args:
-            phone_number: The user identifier.
-            messages: A list of message dictionaries to persist (each must have 'message_json').
+            phone_number: The user identifier (E.164 format)
+            messages: A list of message dictionaries to persist
+                     (each must have 'message_json' key)
+
+        Side Effects:
+            Inserts multiple rows in a single transaction for atomicity
+
+        Example:
+            >>> messages = [
+            ...     {"message_json": '{"kind":"request",...}'},
+            ...     {"message_json": '{"kind":"response",...}'}
+            ... ]
+            >>> await db.save_messages("+1234567890", messages)
         """
         await self.initialize()
 
@@ -164,8 +247,18 @@ class ConversationDB:
         """
         Remove all conversation history for a specific phone number.
 
+        This is a destructive operation that permanently removes all messages
+        for the specified phone number.
+
         Args:
-            phone_number: The user identifier.
+            phone_number: The user identifier (E.164 format)
+
+        Side Effects:
+            Deletes all rows where phone_number matches
+
+        Example:
+            >>> await db.clear_history("+1234567890")
+            # All messages for this user are now deleted
         """
         await self.initialize()
 
@@ -183,10 +276,15 @@ class ConversationDB:
         Get the total number of messages stored for a specific phone number.
 
         Args:
-            phone_number: The user identifier.
+            phone_number: The user identifier (E.164 format)
 
         Returns:
-            The total count of messages.
+            The total count of messages for this user
+
+        Example:
+            >>> count = await db.get_message_count("+1234567890")
+            >>> print(f"User has {count} messages")
+            User has 42 messages
         """
         await self.initialize()
 

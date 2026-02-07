@@ -4,19 +4,19 @@ services:
   server:
     image: harmless138/dojohub:askariagent-1.0.0
     ports:
-      - "9000:8000"
+      - "4000:8000"
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
       ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
     volumes:
       - askari_logs:/app/logs
-      - askari_conversations:/app/conversations.db
+      - askari_data:/app/data
     restart: unless-stopped
 
   whatsapp:
     image: harmless138/dojohub:askariagent-1.0.0
     ports:
-      - "9001:8001"
+      - "4001:8001"
     command: uv run python -m askari_patrol_client.whatsapp_client
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
@@ -27,7 +27,7 @@ services:
       ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
     volumes:
       - askari_logs:/app/logs
-      - askari_conversations:/app/conversations.db
+      - askari_data:/app/data
     restart: unless-stopped
     depends_on:
       - server
@@ -38,7 +38,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./dozzle_users.yml:/data/users.yml
     ports:
-      - "9002:8080"
+      - "4002:8080"
     restart: unless-stopped
     environment:
       - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
@@ -47,5 +47,5 @@ services:
 volumes:
   askari_logs:
     driver: local
-  askari_conversations:
+  askari_data:
     driver: local
