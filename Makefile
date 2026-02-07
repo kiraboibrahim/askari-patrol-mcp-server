@@ -65,3 +65,8 @@ docker-push:
 
 dev:
 	make -j2 server whatsapp
+
+# Dozzle User Management
+# Usage: make dozzle-user user=admin pass=password [email=...] [name=...]
+dozzle-user:
+	PYTHONPATH=$(PYTHONPATH) uv run python scripts/manage_dozzle.py "$(user)" "$(pass)" "$(email)" "$(name)"

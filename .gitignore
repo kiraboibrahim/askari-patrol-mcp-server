@@ -29,3 +29,8 @@ htmlcov/
 .env
 .env.*rc
 secrets.json
+
+# Data and logs
+conversations.db
+logs/
+dozzle_users.yml

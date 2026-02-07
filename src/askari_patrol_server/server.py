@@ -142,7 +142,14 @@ async def get_site_guards(site_id: int) -> GetSiteGuardsResponse:
 
 @mcp.tool()
 @track_errors()
-async def get_site_patrols(site_id: int, page: int = 1) -> GetSitePatrolsResponse:
+async def get_site_patrols(
+    site_id: int,
+    page: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+) -> GetSitePatrolsResponse:
     """
     Get paginated patrol records for a specific site.
     Does NOT require authentication.
@@ -150,9 +157,20 @@ async def get_site_patrols(site_id: int, page: int = 1) -> GetSitePatrolsRespons
     Args:
         site_id: The ID of the site
         page: Page number for pagination (default: 1)
+        start_date: Optional start date for filtering (YYYY-MM-DD)
+        end_date: Optional end date for filtering (YYYY-MM-DD)
+        start_time: Optional start time for filtering (HH:MM)
+        end_time: Optional end time for filtering (HH:MM)
     """
     client = get_client()
-    return await client.get_site_patrols(site_id, page)
+    return await client.get_site_patrols(
+        site_id,
+        page,
+        start_date=start_date,
+        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
+    )
 
 
 @mcp.tool()
@@ -173,7 +191,10 @@ async def get_site_call_logs(site_id: int, page: int = 1) -> GetSiteCallLogsResp
 @mcp.tool()
 @track_errors()
 async def get_site_notifications(
-    site_id: int, page: int = 1
+    site_id: int,
+    page: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> GetSiteNotificationsResponse:
     """
     Get paginated notifications for a specific site.
@@ -182,9 +203,13 @@ async def get_site_notifications(
     Args:
         site_id: The ID of the site
         page: Page number for pagination (default: 1)
+        start_date: Optional start date for filtering (YYYY-MM-DD)
+        end_date: Optional end date for filtering (YYYY-MM-DD)
     """
     client = get_client()
-    return await client.get_site_notifications(site_id, page)
+    return await client.get_site_notifications(
+        site_id, page, start_date=start_date, end_date=end_date
+    )
 
 
 @mcp.tool()
@@ -220,7 +245,14 @@ async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
 
 @mcp.tool()
 @track_errors()
-async def get_guard_patrols(guard_id: int, page: int = 1) -> GetGuardPatrolsResponse:
+async def get_guard_patrols(
+    guard_id: int,
+    page: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+) -> GetGuardPatrolsResponse:
     """
     Get paginated patrol records for a specific security guard.
     Does NOT require authentication.
@@ -228,9 +260,20 @@ async def get_guard_patrols(guard_id: int, page: int = 1) -> GetGuardPatrolsResp
     Args:
         guard_id: The ID of the security guard
         page: Page number for pagination (default: 1)
+        start_date: Optional start date for filtering (YYYY-MM-DD)
+        end_date: Optional end date for filtering (YYYY-MM-DD)
+        start_time: Optional start time for filtering (HH:MM)
+        end_time: Optional end time for filtering (HH:MM)
     """
     client = get_client()
-    return await client.get_guard_patrols(guard_id, page)
+    return await client.get_guard_patrols(
+        guard_id,
+        page,
+        start_date=start_date,
+        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
+    )
 
 
 @mcp.tool()

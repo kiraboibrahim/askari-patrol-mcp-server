@@ -1,3 +1,5 @@
+name: askari-patrol
+
 services:
   server:
     image: harmless138/dojohub:askariagent-1.0.0
@@ -6,6 +8,9 @@ services:
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
       ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
+    volumes:
+      - askari_logs:/app/logs
+      - askari_conversations:/app/conversations.db
     restart: unless-stopped
 
   whatsapp:
@@ -20,6 +25,27 @@ services:
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
       MCP_SERVER_URL: ${MCP_SERVER_URL:-http://server:8000/mcp}
       ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
+    volumes:
+      - askari_logs:/app/logs
+      - askari_conversations:/app/conversations.db
     restart: unless-stopped
     depends_on:
       - server
+
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./dozzle_users.yml:/data/users.yml
+    ports:
+      - "9002:8080"
+    restart: unless-stopped
+    environment:
+      - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
+      - DOZZLE_AUTH_PROVIDER=simple
+
+volumes:
+  askari_logs:
+    driver: local
+  askari_conversations:
+    driver: local

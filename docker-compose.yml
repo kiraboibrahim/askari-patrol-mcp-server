@@ -1,3 +1,5 @@
+name: askari-patrol
+
 services:
   server:
     build: .
@@ -11,6 +13,8 @@ services:
       - ./src:/app/src
       - ./scripts:/app/scripts
       - ./.env:/app/.env
+      - ./logs:/app/logs
+      - ./conversations.db:/app/conversations.db
 
   whatsapp:
     build: .
@@ -28,6 +32,17 @@ services:
       - ./src:/app/src
       - ./scripts:/app/scripts
       - ./.env:/app/.env
+      - ./logs:/app/logs
+      - ./conversations.db:/app/conversations.db
 
     depends_on:
       - server
+
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8888:8080"
+    environment:
+      - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
