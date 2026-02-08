@@ -58,7 +58,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from common.rollbar_config import initialize_rollbar, report_error_to_rollbar_async
-from common.utils import send_typing_indicator
+from common.utils import send_typing_indicator, split_whatsapp_message
 from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp import ClientSession
@@ -573,12 +573,19 @@ async def send_whatsapp_message(phone_number: str, message_text: str) -> None:
     Example:
         >>> await send_whatsapp_message("+1234567890", "Hello!")
     """
-    twilio_client.messages.create(
-        from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
-        body=message_text,
-        to=f"whatsapp:{phone_number}",
-    )
-    logger.info(f"Sent response to {phone_number}")
+    chunks = split_whatsapp_message(message_text)
+
+    for i, chunk in enumerate(chunks):
+        try:
+            twilio_client.messages.create(
+                from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+                body=chunk,
+                to=f"whatsapp:{phone_number}",
+            )
+            logger.info(f"Sent response to {phone_number} (chunk {i+1}/{len(chunks)})")
+        except Exception as e:
+            logger.error(f"Failed to send chunk {i+1} to {phone_number}: {e}")
+            raise e
 
 
 def create_app() -> FastAPI:

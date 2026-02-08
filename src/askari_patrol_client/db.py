@@ -160,7 +160,7 @@ class ConversationDB:
                 SELECT message_json, timestamp
                 FROM conversation_messages
                 WHERE phone_number = ?
-                ORDER BY timestamp DESC
+                ORDER BY timestamp DESC, id DESC
                 LIMIT ?
                 """,
                 (phone_number, limit),

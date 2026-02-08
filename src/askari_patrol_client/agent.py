@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration constants
 DEFAULT_SERVER_URL = "http://localhost:8000/mcp"
-DEFAULT_MODEL = "groq:qwen/qwen3-32b"
+DEFAULT_MODEL = "groq:openai/gpt-oss-120b"
 DEFAULT_HISTORY_LIMIT = 10
 DEFAULT_DB_LOAD_LIMIT = 30
 
