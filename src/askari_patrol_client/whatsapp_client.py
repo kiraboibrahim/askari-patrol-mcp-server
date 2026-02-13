@@ -58,7 +58,11 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from common.rollbar_config import initialize_rollbar, report_error_to_rollbar_async
-from common.utils import send_typing_indicator, split_whatsapp_message
+from common.whatsapp import (
+    convert_markdown_to_whatsapp,
+    send_typing_indicator,
+    split_whatsapp_message,
+)
 from fastapi import BackgroundTasks, FastAPI, Form
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp import ClientSession
@@ -573,7 +577,8 @@ async def send_whatsapp_message(phone_number: str, message_text: str) -> None:
     Example:
         >>> await send_whatsapp_message("+1234567890", "Hello!")
     """
-    chunks = split_whatsapp_message(message_text)
+    formatted_message = convert_markdown_to_whatsapp(message_text)
+    chunks = split_whatsapp_message(formatted_message)
 
     for i, chunk in enumerate(chunks):
         try:
