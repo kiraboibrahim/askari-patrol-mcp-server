@@ -9,6 +9,7 @@ site management, patrol tracking, and notification retrieval.
 import httpx
 from common.schemas.response_schemas import (
     GetGuardPatrolsResponse,
+    GetGuardPerformanceReportResponse,
     GetGuardsResponse,
     GetSiteCallLogsResponse,
     GetSiteGuardsResponse,
@@ -323,6 +324,27 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
             )
             resp.raise_for_status()
             return resp.json()
+
+    async def get_guard_performance_report(
+        self, guard_id: int, year: int, month: int
+    ) -> GetGuardPerformanceReportResponse:
+        """
+        Retrieve the performance report for a specific guard.
+
+        Args:
+            guard_id: Database ID of the security guard.
+            year: Year as integer (e.g., 2024).
+            month: Month as integer (1-12).
+
+        Returns:
+            GetGuardPerformanceReportResponse: The comprehensive performance report.
+        """
+        resp = await self.get(
+            f"/users/security-guards/{guard_id}/performance",
+            params={"year": year, "month": month},
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     def is_authenticated(self) -> bool:
         """

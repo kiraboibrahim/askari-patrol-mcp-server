@@ -132,3 +132,45 @@ class GetStatsResponse(BaseModel):
     securityGuardCount: int
     siteCount: int
     tagCount: int
+
+
+class PerformanceDailyStat(BaseModel):
+    """Schema for a guard's daily performance stats."""
+
+    date: str  # "YYYY-MM-DD"
+    score: float
+    validPatrols: int
+    expectedPatrols: int
+
+
+class PerformanceNotification(BaseModel):
+    """Schema for a performance notification (e.g., absent day)."""
+
+    date: str  # "YYYY-MM-DD"
+    message: str
+
+
+class PerformanceMonth(BaseModel):
+    """Schema for the month context in performance report."""
+
+    year: int
+    month: int
+
+
+class PerformanceGuard(BaseModel):
+    """Minimal guard info as shown in performance reports."""
+
+    id: int
+    name: str
+    uniqueId: str
+
+
+class GetGuardPerformanceReportResponse(BaseModel):
+    """Schema for the comprehensive guard performance report."""
+
+    securityGuard: PerformanceGuard
+    month: PerformanceMonth
+    overallMonthScore: str  # e.g., "75.50"
+    dailyStats: list[PerformanceDailyStat]
+    notifications: list[PerformanceNotification]
+    patrols: list[BasePatrol]

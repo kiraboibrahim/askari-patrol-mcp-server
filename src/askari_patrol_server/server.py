@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from common.rollbar_config import initialize_rollbar
 from common.schemas.response_schemas import (
     GetGuardPatrolsResponse,
+    GetGuardPerformanceReportResponse,
     GetGuardsResponse,
     GetServerHealthResponse,
     GetSiteCallLogsResponse,
@@ -274,6 +275,30 @@ async def get_guard_patrols(
         start_time=start_time,
         end_time=end_time,
     )
+
+
+@mcp.tool()
+@track_errors()
+async def get_guard_performance_report(
+    guard_id: int, year: int, month: int
+) -> GetGuardPerformanceReportResponse:
+    """
+    Get the performance report for a specific security guard.
+    Requires authentication.
+
+    This report includes:
+    - Daily performance statistics (valid vs expected patrols, daily score)
+    - Notifications for absent days (days with shifts but no patrols)
+    - Overall month score percentage
+    - List of all patrols for the month
+
+    Args:
+        guard_id: The ID of the security guard
+        year: The year (e.g., 2024)
+        month: The month (1-12)
+    """
+    client = get_client()
+    return await client.get_guard_performance_report(guard_id, year, month)
 
 
 @mcp.tool()
