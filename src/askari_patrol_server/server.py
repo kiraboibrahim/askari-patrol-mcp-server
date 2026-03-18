@@ -458,3 +458,7 @@ async def get_guard_performance_report(
     client = get_client()
     guard_id = await client.resolve_guard_id(guard_name)
     return await client.get_guard_performance_report(guard_id, year, month)
+
+
+if __name__ == "__main__":
+    mcp.run()
