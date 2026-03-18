@@ -74,7 +74,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration constants
 DEFAULT_SERVER_URL = "http://localhost:8000/mcp"
-DEFAULT_MODEL = os.getenv("ASKARI_MODEL", "google-gla:gemini-3.1-flash-lite")
+DEFAULT_MODEL = os.getenv("ASKARI_MODEL", "google-gla:gemini-2.5-flash")
 DEFAULT_HISTORY_LIMIT = 10
 DEFAULT_DB_LOAD_LIMIT = 30
 
