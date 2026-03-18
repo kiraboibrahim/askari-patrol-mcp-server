@@ -14,6 +14,8 @@ services:
       - askari_logs:/app/logs
       - askari_data:/app/data
     restart: unless-stopped
+    networks:
+      - askari-patrol-network
 
   whatsapp:
     image: ghcr.io/kiraboibrahim/askari-patrol-mcp-server:${ASKARI_VERSION:-latest}
@@ -35,6 +37,8 @@ services:
     restart: unless-stopped
     depends_on:
       - server
+    networks:
+      - askari-patrol-network
 
   dozzle:
     image: amir20/dozzle:latest
@@ -47,6 +51,12 @@ services:
     environment:
       - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
       - DOZZLE_AUTH_PROVIDER=simple
+    networks:
+      - askari-patrol-network
+
+networks:
+  askari-patrol-network:
+    driver: bridge
 
 volumes:
   askari_logs:
