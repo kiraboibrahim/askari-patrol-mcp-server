@@ -14,8 +14,6 @@ services:
       - askari_logs:/app/logs
       - askari_data:/app/data
     restart: unless-stopped
-    networks:
-      - askari-patrol-network
 
   whatsapp:
     image: ghcr.io/kiraboibrahim/askari-patrol-mcp-server:${ASKARI_VERSION:-latest}
@@ -30,6 +28,7 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
       MCP_SERVER_URL: ${MCP_SERVER_URL:-http://server:8000/mcp}
+      ASKARI_MODEL: ${ASKARI_MODEL}
       ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
     volumes:
       - askari_logs:/app/logs
@@ -37,8 +36,6 @@ services:
     restart: unless-stopped
     depends_on:
       - server
-    networks:
-      - askari-patrol-network
 
   dozzle:
     image: amir20/dozzle:latest
@@ -51,12 +48,6 @@ services:
     environment:
       - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
       - DOZZLE_AUTH_PROVIDER=simple
-    networks:
-      - askari-patrol-network
-
-networks:
-  askari-patrol-network:
-    driver: bridge
 
 volumes:
   askari_logs:

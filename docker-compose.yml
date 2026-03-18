@@ -10,8 +10,6 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ROLLBAR_SERVER_TOKEN=${ROLLBAR_SERVER_TOKEN}
-    networks:
-      - askari-patrol-network
 
     volumes:
       - ./src:/app/src
@@ -33,6 +31,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://server:8000/mcp}
+      - ASKARI_MODEL=${ASKARI_MODEL}
       - ROLLBAR_SERVER_TOKEN=${ROLLBAR_SERVER_TOKEN}
     volumes:
       - ./src:/app/src
@@ -43,8 +42,6 @@ services:
 
     depends_on:
       - server
-    networks:
-      - askari-patrol-network
 
   dozzle:
     image: amir20/dozzle:latest
@@ -54,9 +51,3 @@ services:
       - "8888:8080"
     environment:
       - DOZZLE_FILTER=label=com.docker.compose.project=askari-patrol
-    networks:
-      - askari-patrol-network
-
-networks:
-  askari-patrol-network:
-    driver: bridge
