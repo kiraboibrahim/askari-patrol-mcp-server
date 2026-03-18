@@ -215,7 +215,10 @@ class AskariAgent:
         # Internal tools that the Python client calls directly via direct_call_tool.
         # These are filtered *out* of the LLM's tool list so it can never invoke
         # them autonomously — they are not visible to the model at all.
-        _INTERNAL_TOOLS = {"login", "restore_session", "is_authenticated"}
+        #
+        # Note: 'login' is intentionally excluded from _INTERNAL_TOOLS so the LLM
+        # can invoke it autonomously when the user provides credentials.
+        _INTERNAL_TOOLS = {"restore_session", "is_authenticated"}
 
         # Expose only non-internal tools to the LLM
         llm_toolset = self._server.filtered(
