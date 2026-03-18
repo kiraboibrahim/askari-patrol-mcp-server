@@ -1,3 +1,22 @@
+"""
+Askari Patrol MCP Server.
+
+This module exposes the Askari Patrol guard tour management API as a set of
+FastMCP tools consumable by any MCP-compatible AI client (e.g. Claude, Pydantic AI).
+
+Each registered tool is scoped to the HTTP session that issued the request.
+``get_client()`` lazily creates a per-session :class:`AskariPatrolAsyncClient`
+instance so that every concurrent WhatsApp user gets their own authenticated
+connection without sharing state between sessions.
+
+Authentication flow:
+    1. An authenticated client calls ``login`` (or the Python client silently
+       calls ``restore_session``) to attach a bearer token to the session client.
+    2. Subsequent tool calls read that token from the session-local client via
+       ``get_client()``, which is sufficient for the entire lifetime of the
+       connection.
+"""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -7,14 +26,11 @@ from common.schemas.response_schemas import (
     GetGuardPatrolsResponse,
     GetGuardPerformanceReportResponse,
     GetGuardsResponse,
-    GetServerHealthResponse,
     GetSiteCallLogsResponse,
     GetSiteGuardsResponse,
     GetSiteNotificationsResponse,
     GetSitePatrolsResponse,
-    GetSiteShiftsResponse,
     GetSitesRespnose,
-    GetStatsResponse,
     LoginResponse,
 )
 from mcp.server.fastmcp import FastMCP
@@ -25,12 +41,14 @@ from .decorators.track_errors import track_errors
 
 @dataclass
 class AppContext:
+    """Holds application-level state passed through the MCP lifespan."""
+
     client: AskariPatrolAsyncClient
 
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
-    """Manage API client lifecycle."""
+    """Manage API client lifecycle for the application."""
     yield {}
 
 
@@ -47,14 +65,39 @@ mcp = FastMCP(
 
 
 def get_client() -> AskariPatrolAsyncClient:
+    """
+    Return the session-local API client, creating it on first access.
+
+    Each MCP session (i.e. one WhatsApp user / one chat connection) receives
+    its own isolated :class:`AskariPatrolAsyncClient` stored on the session
+    object.  This ensures that bearer tokens issued by ``login`` are never
+    leaked across sessions.
+
+    The client's lifecycle is tied to the session via ``push_async_callback``,
+    so it is properly closed when the session ends.
+
+    Returns:
+        AskariPatrolAsyncClient: The caller's session-scoped HTTP client.
+    """
     ctx = mcp.get_context().request_context
-    session = ctx.session  # unique per chat user
+    session = ctx.session  # unique per chat connection
 
     if not hasattr(session, "_client"):
         session._client = AskariPatrolAsyncClient()
+        # Ensure the client is gracefully closed at end of session
         session._exit_stack.push_async_callback(session._client.aclose)
 
     return session._client
+
+
+# ---------------------------------------------------------------------------
+# Authentication tools  (login, restore_session, is_authenticated)
+#
+# These are registered on the MCP server so the Python client can call them
+# directly via ``direct_call_tool``.  They are hidden from the LLM's tool
+# list by the ``MCPServerStreamableHTTP.filtered()`` call in ``AskariAgent.connect``,
+# so the model will never see or attempt to invoke them autonomously.
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool()
@@ -62,7 +105,19 @@ def get_client() -> AskariPatrolAsyncClient:
 async def login(username: str, password: str) -> LoginResponse:
     """
     Authenticate with the Askari Patrol API.
-    Returns an access token that will be used for subsequent requests.
+
+    Calls the backend ``/auth/signin`` endpoint and stores the resulting JWT
+    on the session-local client.  The token is returned to the caller so the
+    Python client can persist it to the conversation database for session
+    restoration after reconnects.
+
+    Args:
+        username: The user's registered email address or username.
+        password: The user's plaintext password (transmitted over TLS only).
+
+    Returns:
+        LoginResponse: A dict containing ``success``, ``message``, and
+            ``access_token`` fields.
     """
     client = get_client()
     result = await client.login(username, password)
@@ -75,25 +130,65 @@ async def login(username: str, password: str) -> LoginResponse:
 
 @mcp.tool()
 @track_errors()
-async def get_stats() -> GetStatsResponse:
+async def restore_session(token: str) -> dict:
     """
-    Get overall statistics including counts of companies, admins, guards, sites, and tags.
-    Requires authentication.
+    Restore an authenticated session from a previously obtained JWT.
+
+    Validates the token's expiry before applying it.  Called by the Python
+    client (``AskariAgent._restore_session``) automatically on reconnection,
+    bypassing the LLM entirely.
+
+    Args:
+        token: A JWT bearer token retrieved from the local conversation database.
+
+    Returns:
+        dict: ``{"success": True}`` on success or ``{"success": False}`` if the
+            token is expired or structurally invalid.
     """
+    from common.utils import is_token_valid  # local import avoids circular dep
+
     client = get_client()
-    return await client.get_stats()
+    if not is_token_valid(token):
+        return {"success": False, "message": "Token is expired or invalid"}
+
+    client._set_auth_header(token)
+    return {"success": True, "message": "Session restored"}
+
+
+# get_stats is intentionally disabled — it is restricted to super-admin roles
+# that are not served by this MCP interface.
+#
+# @mcp.tool()
+# @track_errors()
+# async def get_stats() -> GetStatsResponse:
+#     """Get overall statistics including site, guard, and company counts."""
+#     client = get_client()
+#     return await client.get_stats()
+
+
+# ---------------------------------------------------------------------------
+# Site tools
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool()
 @track_errors()
 async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
     """
-    Search for sites by name or other criteria.
+    Search for sites by name (partial or full matches).
+    Use this when the user's site name is incomplete or potentially misspelled.
     Requires authentication.
 
     Args:
-        query: Search query string
-        page: Page number for pagination (default: 1)
+        query: Partial or full site name to search for. Example: "Gate", "West".
+        page: Page number for paginated results. Defaults to 1.
+
+    Returns:
+        GetSitesRespnose: Paginated list of sites matching the query.
+
+    Examples:
+        search_sites("Gate", page=1)
+        search_sites("Riverside")
     """
     client = get_client()
     return await client.search_sites(query, page)
@@ -103,11 +198,15 @@ async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
 @track_errors()
 async def get_sites(page: int = 1) -> GetSitesRespnose:
     """
-    Get a paginated list of all sites.
+    List all sites in the system.
+    Use this to get a complete list when you don't know the exact site name.
     Requires authentication.
 
     Args:
-        page: Page number for pagination (default: 1)
+        page: Page number for paginated results. Defaults to 1.
+
+    Returns:
+        GetSitesRespnose: Paginated list of all registered sites.
     """
     client = get_client()
     return await client.get_sites(page)
@@ -115,36 +214,47 @@ async def get_sites(page: int = 1) -> GetSitesRespnose:
 
 @mcp.tool()
 @track_errors()
-async def get_site_shifts(site_id: int) -> GetSiteShiftsResponse:
+async def is_authenticated() -> dict:
     """
-    Get all shifts for a specific site.
-    Requires authentication.
+    [INTERNAL] Check whether the current session has a valid, non-expired token.
 
-    Args:
-        site_id: The ID of the site
+    Called by the Python client before every user request as a pre-flight
+    authentication gate.  Returns a plain dict so the result can be parsed
+    from the MCP ``ToolResult`` content blocks.
+
+    Returns:
+        dict: ``{"authenticated": True/False}``
     """
     client = get_client()
-    return await client.get_site_shifts(site_id)
+    return {"authenticated": client.is_authenticated()}
 
 
 @mcp.tool()
 @track_errors()
-async def get_site_guards(site_id: int) -> GetSiteGuardsResponse:
+async def get_site_guards(site_name: str) -> GetSiteGuardsResponse:
     """
-    Get all guards for a specific site.
+    Retrieve all security guards assigned to a site across all its shifts.
     Requires authentication.
 
     Args:
-        site_id: The ID of the site
+        site_name: The exact name of the site. Example: "Riverside"
+
+    Returns:
+        GetSiteGuardsResponse: List of guards across all shifts at the site.
+
+    Examples:
+        get_site_guards("Riverside")
+        get_site_guards("West Gate")
     """
     client = get_client()
+    site_id = await client.resolve_site_id(site_name)
     return await client.get_site_guards(site_id)
 
 
 @mcp.tool()
 @track_errors()
 async def get_site_patrols(
-    site_id: int,
+    site_name: str,
     page: int = 1,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -152,21 +262,29 @@ async def get_site_patrols(
     end_time: str | None = None,
 ) -> GetSitePatrolsResponse:
     """
-    Get paginated patrol records for a specific site.
-    Does NOT require authentication.
+    Retrieve patrol records for a specific site with optional date/time filters.
+    Requires authentication.
 
     Args:
-        site_id: The ID of the site
-        page: Page number for pagination (default: 1)
-        start_date: Optional start date for filtering (YYYY-MM-DD)
-        end_date: Optional end date for filtering (YYYY-MM-DD)
-        start_time: Optional start time for filtering (HH:MM)
-        end_time: Optional end time for filtering (HH:MM)
+        site_name: The exact name of the site. Example: "Riverside"
+        page: Page number for paginated results. Defaults to 1.
+        start_date: Start of date range filter (YYYY-MM-DD). Example: "2024-01-01"
+        end_date: End of date range filter (YYYY-MM-DD). Example: "2024-01-31"
+        start_time: Start of time range filter (HH:MM). Example: "08:00"
+        end_time: End of time range filter (HH:MM). Example: "18:00"
+
+    Returns:
+        GetSitePatrolsResponse: Paginated list of patrol records.
+
+    Examples:
+        get_site_patrols("Riverside", start_date="2024-01-01", end_date="2024-01-31")
+        get_site_patrols("West Gate", start_time="08:00", end_time="18:00")
     """
     client = get_client()
+    site_id = await client.resolve_site_id(site_name)
     return await client.get_site_patrols(
         site_id,
-        page,
+        page=page,
         start_date=start_date,
         end_date=end_date,
         start_time=start_time,
@@ -176,69 +294,101 @@ async def get_site_patrols(
 
 @mcp.tool()
 @track_errors()
-async def get_site_call_logs(site_id: int, page: int = 1) -> GetSiteCallLogsResponse:
+async def get_site_call_logs(site_name: str, page: int = 1) -> GetSiteCallLogsResponse:
     """
-    Get paginated call logs for a specific site.
+    Retrieve call logs for a specific site.
     Requires authentication.
 
     Args:
-        site_id: The ID of the site
-        page: Page number for pagination (default: 1)
+        site_name: The exact name of the site. Example: "Riverside"
+        page: Page number for paginated results. Defaults to 1.
+
+    Returns:
+        GetSiteCallLogsResponse: Paginated list of call logs for the site.
+
+    Examples:
+        get_site_call_logs("Riverside")
+        get_site_call_logs("West Gate", page=2)
     """
     client = get_client()
+    site_id = await client.resolve_site_id(site_name)
     return await client.get_site_call_logs(site_id, page)
 
 
 @mcp.tool()
 @track_errors()
-async def get_site_notifications(
-    site_id: int,
-    page: int = 1,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> GetSiteNotificationsResponse:
-    """
-    Get paginated notifications for a specific site.
-    Requires authentication.
-
-    Args:
-        site_id: The ID of the site
-        page: Page number for pagination (default: 1)
-        start_date: Optional start date for filtering (YYYY-MM-DD)
-        end_date: Optional end date for filtering (YYYY-MM-DD)
-    """
-    client = get_client()
-    return await client.get_site_notifications(
-        site_id, page, start_date=start_date, end_date=end_date
-    )
-
-
-@mcp.tool()
-@track_errors()
-async def get_site_monthly_score(site_id: int, year: int, month: int) -> str:
+async def get_site_monthly_score(site_name: str, year: int, month: int) -> str:
     """
     Get the monthly performance score for a specific site.
     Requires authentication.
 
     Args:
-        site_id: The ID of the site
+        site_name: The exact name of the site. Example: "Riverside"
         year: The year (e.g., 2024)
         month: The month (1-12)
     """
     client = get_client()
+    site_id = await client.resolve_site_id(site_name)
     return await client.get_site_monthly_score(site_id, year, month)
+
+
+@mcp.tool()
+@track_errors()
+async def get_site_notifications(
+    site_name: str,
+    page: int = 1,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> GetSiteNotificationsResponse:
+    """
+    Retrieve notifications/alerts for a specific site with optional date filters.
+    Requires authentication.
+
+    Args:
+        site_name: The exact name of the site. Example: "West Gate"
+        page: Page number for paginated results. Defaults to 1.
+        start_date: Start of date range filter (YYYY-MM-DD). Example: "2024-01-01"
+        end_date: End of date range filter (YYYY-MM-DD). Example: "2024-01-31"
+
+    Returns:
+        GetSiteNotificationsResponse: Paginated list of site alerts/notifications.
+
+    Examples:
+        get_site_notifications("West Gate", start_date="2024-01-01", end_date="2024-01-31")
+    """
+    client = get_client()
+    site_id = await client.resolve_site_id(site_name)
+    return await client.get_site_notifications(
+        site_id,
+        page=page,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Guard tools
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool()
 @track_errors()
 async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
     """
-    Search for security guards by name or other criteria.
+    Search for security guards by name or uniqueId.
+    Use this to find correct guard names for other tools.
     Requires authentication.
 
     Args:
-        query: Search query string
-        page: Page number for pagination (default: 1)
+        query: Full or partial guard name or uniqueId. Example: "John", "GRD-001"
+        page: Page number for paginated results. Defaults to 1.
+
+    Returns:
+        GetGuardsResponse: Paginated list of guards matching the query.
+
+    Examples:
+        search_guards("John")
+        search_guards("GRD-001")
     """
     client = get_client()
     return await client.search_guards(query, page)
@@ -247,7 +397,7 @@ async def search_guards(query: str, page: int = 1) -> GetGuardsResponse:
 @mcp.tool()
 @track_errors()
 async def get_guard_patrols(
-    guard_id: int,
+    guard_name: str,
     page: int = 1,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -255,21 +405,29 @@ async def get_guard_patrols(
     end_time: str | None = None,
 ) -> GetGuardPatrolsResponse:
     """
-    Get paginated patrol records for a specific security guard.
-    Does NOT require authentication.
+    Retrieve patrol records for a specific security guard with optional filters.
+    Requires authentication.
 
     Args:
-        guard_id: The ID of the security guard
-        page: Page number for pagination (default: 1)
-        start_date: Optional start date for filtering (YYYY-MM-DD)
-        end_date: Optional end date for filtering (YYYY-MM-DD)
-        start_time: Optional start time for filtering (HH:MM)
-        end_time: Optional end time for filtering (HH:MM)
+        guard_name: Full name of the guard. Example: "John Doe"
+        page: Page number for paginated results. Defaults to 1.
+        start_date: Start of date range filter (YYYY-MM-DD). Example: "2024-01-01"
+        end_date: End of date range filter (YYYY-MM-DD). Example: "2024-01-31"
+        start_time: Start of time range filter (HH:MM). Example: "08:00"
+        end_time: End of time range filter (HH:MM). Example: "17:00"
+
+    Returns:
+        GetGuardPatrolsResponse: Paginated list of patrols completed by this guard.
+
+    Examples:
+        get_guard_patrols("John Doe", start_date="2024-01-01", end_date="2024-01-31")
+        get_guard_patrols("Jane Smith", start_time="08:00", end_time="17:00")
     """
     client = get_client()
+    guard_id = await client.resolve_guard_id(guard_name)
     return await client.get_guard_patrols(
         guard_id,
-        page,
+        page=page,
         start_date=start_date,
         end_date=end_date,
         start_time=start_time,
@@ -280,74 +438,23 @@ async def get_guard_patrols(
 @mcp.tool()
 @track_errors()
 async def get_guard_performance_report(
-    guard_id: int, year: int, month: int
+    guard_name: str, year: int, month: int
 ) -> GetGuardPerformanceReportResponse:
     """
-    Get the performance report for a specific security guard.
+    Get the monthly performance report for a specific security guard.
     Requires authentication.
 
-    This report includes:
-    - Daily performance statistics (valid vs expected patrols, daily score)
-    - Notifications for absent days (days with shifts but no patrols)
-    - Overall month score percentage
-    - List of all patrols for the month
-
     Args:
-        guard_id: The ID of the security guard
+        guard_name: Full name of the guard. Example: "John Doe"
         year: The year (e.g., 2024)
-        month: The month (1-12)
+        month: The month as a number (1-12). Example: 3 for March
+
+    Returns:
+        GetGuardPerformanceReportResponse: Detailed monthly performance metrics.
+
+    Examples:
+        get_guard_performance_report("John Doe", 2024, 3)
     """
     client = get_client()
+    guard_id = await client.resolve_guard_id(guard_name)
     return await client.get_guard_performance_report(guard_id, year, month)
-
-
-@mcp.tool()
-@track_errors()
-async def logout() -> dict:
-    """
-    Logout and clear the client session.
-    """
-    ctx = mcp.get_context().request_context
-    session = ctx.session
-
-    client: AskariPatrolAsyncClient | None = getattr(session, "_client", None)
-    if client:
-        await client.aclose()
-        delattr(session, "_client")
-
-    return {"success": True, "message": "Logged out successfully"}
-
-
-@mcp.tool()
-@track_errors()
-async def is_authenticated() -> bool:
-    """
-    Check if the current session is authenticated.
-    """
-    ctx = mcp.get_context().request_context
-    session = ctx.session
-
-    client: AskariPatrolAsyncClient | None = getattr(session, "_client", None)
-    if client:
-        return client.is_authenticated()
-    return False
-
-
-@mcp.tool()
-@track_errors()
-async def is_healthy() -> GetServerHealthResponse:
-    """
-    Health check endpoint to verify server is running.
-    """
-    return {
-        "status": "ok",
-    }
-
-
-app = mcp.streamable_http_app()
-
-if __name__ == "__main__":
-    try:
-        mcp.run(transport="streamable-http")
-    except KeyboardInterrupt:
-        print("👋 Program stopped by user. Goodbye!")

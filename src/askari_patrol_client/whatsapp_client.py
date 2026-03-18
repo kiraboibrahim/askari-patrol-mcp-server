@@ -26,7 +26,7 @@ Environment Variables:
         TWILIO_ACCOUNT_SID: Twilio account identifier
         TWILIO_AUTH_TOKEN: Twilio authentication token
         TWILIO_WHATSAPP_NUMBER: Twilio WhatsApp number (E.164 format)
-        GROQ_API_KEY: API key for Groq LLM service
+        GOOGLE_API_KEY: API key for Google Gemini AI service
 
     Optional:
         MCP_SERVER_URL: MCP server endpoint (default: http://localhost:8000/mcp)
@@ -70,7 +70,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from rollbar.contrib.fastapi import add_to as rollbar_add_to
 from twilio.rest import Client
 
-from .agent import AskariAgent
+from .agent import AskariAgent, AuthenticationError
 from .prompts import WHATSAPP_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,10 @@ MSG_MEDIA_NOT_SUPPORTED = (
 MSG_RATE_LIMITED = "⚠️ You've reached the message limit. Please wait {} seconds before sending more messages."
 MSG_PROCESSING_PREVIOUS = "⏳ Please wait, I'm still processing your previous message."
 MSG_PROCESSING_ERROR = "I encountered an error processing your message."
+MSG_AUTH_REQUIRED = (
+    "⚠️ Your session has expired or you are not logged in. "
+    "To proceed, please provide your email address and password to authenticate."
+)
 
 
 class RateLimiter:
@@ -400,7 +404,7 @@ def check_missing_env_vars() -> tuple[list[str], bool]:
         "TWILIO_ACCOUNT_SID",
         "TWILIO_AUTH_TOKEN",
         "TWILIO_WHATSAPP_NUMBER",
-        "GROQ_API_KEY",
+        "GOOGLE_API_KEY",
     ]
     missing_env_vars = [var for var in required_env_vars if not os.environ.get(var)]
     env_ok = not missing_env_vars
@@ -556,6 +560,9 @@ async def process_with_agent(
     """
     try:
         return await agent.run(message)
+    except AuthenticationError:
+        logger.info(f"Authentication required for {phone_number}")
+        return MSG_AUTH_REQUIRED
     except Exception as e:
         logger.error(f"Agent processing error for {phone_number}: {e}")
         await report_error_to_rollbar_async(exc=e)

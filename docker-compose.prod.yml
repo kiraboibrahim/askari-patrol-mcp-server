@@ -2,7 +2,7 @@ name: askari-patrol
 
 services:
   server:
-    image: harmless138/dojohub:askariagent-1.0.0
+    image: ghcr.io/kiraboibrahim/askari-patrol-mcp-server:${ASKARI_VERSION:-latest}
     ports:
       - "4000:8000"
     environment:
@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   whatsapp:
-    image: harmless138/dojohub:askariagent-1.0.0
+    image: ghcr.io/kiraboibrahim/askari-patrol-mcp-server:${ASKARI_VERSION:-latest}
     ports:
       - "4001:8001"
     command: uv run python -m askari_patrol_client.whatsapp_client

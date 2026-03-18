@@ -57,14 +57,21 @@ docker-up:
 docker-down:
 	docker compose down
 
+IMAGE_NAME := ghcr.io/kiraboibrahim/askari-patrol-mcp-server
+
 docker-build:
-	docker build -t harmless138/dojohub:askariagent-1.0.0 .
+	docker build -t $(IMAGE_NAME):latest .
 
 docker-push:
-	docker push harmless138/dojohub:askariagent-1.0.0
+	docker push $(IMAGE_NAME):latest
 
 dev:
 	make -j2 server whatsapp
+
+# Deployment
+# Usage: make deploy [vps_ip=...] [vps_user=legitsystems]
+deploy: docker-build docker-push
+	ssh $(vps_user)@$(vps_ip) "cd ~/docker-apps/askariagent && git pull origin main && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
 
 # Dozzle User Management
 # Usage: make dozzle-user user=admin pass=password [email=...] [name=...]

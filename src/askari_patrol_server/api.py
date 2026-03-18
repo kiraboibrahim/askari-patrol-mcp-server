@@ -17,7 +17,6 @@ from common.schemas.response_schemas import (
     GetSitePatrolsResponse,
     GetSiteShiftsResponse,
     GetSitesRespnose,
-    GetStatsResponse,
     LoginResponse,
 )
 from common.utils import is_token_valid
@@ -48,6 +47,12 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         self._token = token
         self.headers.update({"Authorization": f"Bearer {token}"})
 
+    async def logout(self):
+        """Clear the current session token."""
+        self._token = None
+        if "Authorization" in self.headers:
+            del self.headers["Authorization"]
+
     async def login(self, username: str, password: str) -> LoginResponse:
         """
         Authenticate with the API and store the access token.
@@ -68,16 +73,17 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         self._set_auth_header(data["access_token"])
         return data
 
-    async def get_stats(self) -> GetStatsResponse:
-        """
-        Retrieve system-wide statistics.
-
-        Returns:
-            GetStatsResponse: Counts for sites, guards, companies, etc.
-        """
-        resp = await self.get("/stats")
-        resp.raise_for_status()
-        return resp.json()
+    # get_stats is commented out as it is restricted to super admins.
+    #     async def get_stats(self) -> GetStatsResponse:
+    #         """
+    #         Retrieve system-wide statistics.
+    #
+    #         Returns:
+    #             GetStatsResponse: Counts for sites, guards, companies, etc.
+    #         """
+    #         resp = await self.get("/stats")
+    #         resp.raise_for_status()
+    #         return resp.json()
 
     async def search_sites(self, query: str, page: int | None = 1) -> GetSitesRespnose:
         """
@@ -345,6 +351,101 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         )
         resp.raise_for_status()
         return resp.json()
+
+    async def resolve_site_id(self, site_name: str) -> int:
+        """
+        Resolve a site name to its numeric database ID.
+
+        Args:
+            site_name: The human-readable name of the site.
+
+        Returns:
+            int: The numeric database ID.
+
+        Raises:
+            LookupError: If site not found or name is ambiguous.
+        """
+        # 1. Try search first for direct match
+        search_resp = await self.search_sites(site_name)
+        results = search_resp.get("data", [])
+
+        # Exact case-insensitive match check
+        exact_matches = [s for s in results if s["name"].lower() == site_name.lower()]
+        if len(exact_matches) == 1:
+            return exact_matches[0]["id"]
+
+        if not results:
+            # Fallback to listing all if search yielded nothing (e.g., partial match failed)
+            sites_resp = await self.get_sites()
+            all_sites = sites_resp.get("data", [])
+            exact_matches = [
+                s for s in all_sites if s["name"].lower() == site_name.lower()
+            ]
+            if len(exact_matches) == 1:
+                return exact_matches[0]["id"]
+
+            raise LookupError(
+                f"Site '{site_name}' not found. Use `get_sites` to see available site names."
+            )
+
+        if len(results) > 1:
+            names = [s["name"] for s in results]
+            raise LookupError(
+                f"Ambiguous site name '{site_name}'. Found: {', '.join(names)}. Please provide the exact name."
+            )
+
+        return results[0]["id"]
+
+    async def resolve_guard_id(self, guard_name: str) -> int:
+        """
+        Resolve a guard's full name to their numeric database ID.
+
+        Args:
+            guard_name: Full name of the guard (e.g., "John Doe").
+
+        Returns:
+            int: The numeric database ID.
+
+        Raises:
+            LookupError: If guard not found or name is ambiguous.
+        """
+        search_resp = await self.search_guards(guard_name)
+        results = search_resp.get("data", [])
+
+        # Exact name match against firstName + lastName
+        exact_matches = []
+        for g in results:
+            full_name = f"{g['firstName']} {g['lastName']}".lower()
+            if full_name == guard_name.lower():
+                exact_matches.append(g)
+
+        if len(exact_matches) == 1:
+            return exact_matches[0]["id"]
+
+        if not results:
+            raise LookupError(
+                f"Guard '{guard_name}' not found. Use `search_guards` to verify the name."
+            )
+
+        if len(results) > 1:
+            names = [f"{g['firstName']} {g['lastName']}" for g in results]
+            raise LookupError(
+                f"Ambiguous guard name '{guard_name}'. Found: {', '.join(names)}. Please verify the name."
+            )
+
+        return results[0]["id"]
+
+    async def get_help(self) -> str:
+        """
+        Get a summary of the capabilities of the Askari Patrol system.
+
+        Returns:
+            str: A formatted help string.
+        """
+        return """### Askari Patrol System Overview
+Available Operations:
+• **Sites**: Search, shifts, guards, patrols, call logs, scores.
+• **Guards**: Search, patrols, performance reports."""
 
     def is_authenticated(self) -> bool:
         """

@@ -45,9 +45,13 @@ See Also:
     - MCP Protocol: https://modelcontextprotocol.io/
 """
 
+import json
 import logging
+import os
+import re
 from typing import Any
 
+from common.utils import is_token_valid
 from pydantic import TypeAdapter
 from pydantic_ai import Agent, ModelMessagesTypeAdapter
 from pydantic_ai.mcp import MCPServerStreamableHTTP
@@ -61,6 +65,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
+from pydantic_ai.models import ModelSettings
 
 from .db import ConversationDB
 from .prompts import CLI_SYSTEM_PROMPT
@@ -69,9 +74,18 @@ logger = logging.getLogger(__name__)
 
 # Configuration constants
 DEFAULT_SERVER_URL = "http://localhost:8000/mcp"
-DEFAULT_MODEL = "groq:openai/gpt-oss-120b"
+DEFAULT_MODEL = os.getenv("ASKARI_MODEL", "google-gla:gemini-2.5-flash")
 DEFAULT_HISTORY_LIMIT = 10
 DEFAULT_DB_LOAD_LIMIT = 30
+
+# Regular expression for simple email detection to allow conversational login
+_EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+class AuthenticationError(Exception):
+    """Raised when an operation requires authentication but the user is not logged in."""
+
+    pass
 
 
 class AskariAgent:
@@ -127,7 +141,7 @@ class AskariAgent:
         Example:
             >>> agent = AskariAgent(
             ...     server_url="http://prod.example.com/mcp",
-            ...     phone_number="user_42",
+            ...     phone_number="256709645302",
             ...     history_limit=20
             ... )
         """
@@ -142,8 +156,33 @@ class AskariAgent:
         self._agent: Agent | None = None
         self._history: list[ModelMessage] = []
 
-        # Database for persistent storage
         self.db = ConversationDB()
+
+        self._validate_model_keys()
+
+    def _validate_model_keys(self) -> None:
+        """Validates that the required API key for the configured model is present."""
+        model_lower = self.model.lower()
+        if model_lower.startswith("google") or model_lower.startswith("gemini"):
+            if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+                raise ValueError(
+                    "GOOGLE_API_KEY or GEMINI_API_KEY environment variable is required for Google models"
+                )
+        elif model_lower.startswith("anthropic") or model_lower.startswith("claude"):
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                raise ValueError(
+                    "ANTHROPIC_API_KEY environment variable is required for Anthropic models"
+                )
+        elif model_lower.startswith("groq"):
+            if not os.getenv("GROQ_API_KEY"):
+                raise ValueError(
+                    "GROQ_API_KEY environment variable is required for Groq models"
+                )
+        elif model_lower.startswith("openai"):
+            if not os.getenv("OPENAI_API_KEY"):
+                raise ValueError(
+                    "OPENAI_API_KEY environment variable is required for OpenAI models"
+                )
 
     async def connect(self) -> None:
         """
@@ -173,16 +212,30 @@ class AskariAgent:
         self._server = MCPServerStreamableHTTP(self.server_url)
         await self._server.__aenter__()
 
-        # Configure Pydantic AI agent with MCP toolset
+        # Internal tools that the Python client calls directly via direct_call_tool.
+        # These are filtered *out* of the LLM's tool list so it can never invoke
+        # them autonomously — they are not visible to the model at all.
+        _INTERNAL_TOOLS = {"login", "restore_session", "is_authenticated"}
+
+        # Expose only non-internal tools to the LLM
+        llm_toolset = self._server.filtered(
+            lambda _ctx, tool_def: tool_def.name not in _INTERNAL_TOOLS
+        )
+
+        # Configure Pydantic AI agent with filtered MCP toolset
         self._agent = Agent(
             self.model,
             system_prompt=self.instructions,
-            toolsets=[self._server],
+            toolsets=[llm_toolset],
             history_processors=[self._trim_history_processor],
+            model_settings=ModelSettings(temperature=0.0),
         )
 
         # Reconstruct conversation history from persistent storage
         await self._load_and_reconstruct_history()
+
+        # Programmatically restore the session if a token exists in history
+        await self._restore_session()
 
     async def _load_and_reconstruct_history(self) -> None:
         """
@@ -212,6 +265,60 @@ class AskariAgent:
             self.phone_number, limit=DEFAULT_DB_LOAD_LIMIT
         )
         self._history = self._reconstruct_history(db_messages)
+
+    async def _restore_session(self) -> None:
+        """
+        Silently restore the MCP server session from the conversation history.
+
+        Scans the in-memory history in reverse order for the most recent
+        successful ``login`` tool-return.  If found and the token is still
+        valid, calls the server-side ``restore_session`` tool to re-attach
+        the bearer token to the current session — without involving the LLM.
+
+        This runs automatically at the end of :meth:`connect`, so users who
+        reconnect after a crash or restart never have to log in again as long
+        as their token has not expired.
+        """
+        if not self._history or not self._server:
+            return
+
+        for msg in reversed(self._history):
+            if not hasattr(msg, "parts"):
+                continue
+            for part in msg.parts:
+                # Look for a tool-return from the `login` tool
+                if getattr(part, "tool_name", "") != "login":
+                    continue
+                try:
+                    content = getattr(part, "content", None)
+                    if not content:
+                        continue
+
+                    data = json.loads(content) if isinstance(content, str) else content
+
+                    if (
+                        isinstance(data, dict)
+                        and data.get("success")
+                        and "access_token" in data
+                    ):
+                        token = data["access_token"]
+
+                        # Validate the token before attempting any network call;
+                        # skip if already expired to avoid unnecessary round-trips.
+                        if not is_token_valid(token):
+                            logger.info(
+                                "Skipping session restore for %s: token is expired.",
+                                self.phone_number,
+                            )
+                            return
+
+                        await self._server.direct_call_tool(
+                            "restore_session", {"token": token}
+                        )
+                        logger.info("Session restored for %s", self.phone_number)
+                        return
+                except Exception as e:
+                    logger.warning("Could not restore session from history: %s", e)
 
     async def disconnect(self) -> None:
         """
@@ -276,6 +383,38 @@ class AskariAgent:
             raise RuntimeError(
                 "Agent not connected. Call connect() or use async context manager."
             )
+
+        # Pre-flight auth gate: verify the session before every LLM invocation.
+        # Using direct_call_tool (not call_tool) because we are outside the
+        # agent run loop and have no RunContext or ToolsetTool to pass.
+        is_auth = False
+        try:
+            auth_res = await self._server.direct_call_tool("is_authenticated", {})
+            # Parse the JSON text from the MCP ToolResult content blocks
+            for part in getattr(auth_res, "content", []):
+                if hasattr(part, "text"):
+                    data = json.loads(part.text)
+                    is_auth = data.get("authenticated", False)
+                    break
+        except Exception as e:
+            logger.warning(
+                "Auth pre-flight check failed for %s: %s", self.phone_number, e
+            )
+
+        # If not authenticated, check if this looks like a login attempt
+        if not is_auth:
+            # Check for email pattern to allow conversational login
+            is_login_attempt = bool(_EMAIL_PATTERN.search(message))
+
+            if not is_login_attempt:
+                logger.warning(
+                    f"Blocking unauthenticated request from {self.phone_number}"
+                )
+                raise AuthenticationError(
+                    "Authentication required. Please log in first."
+                )
+
+            logger.info(f"Allowing potential login attempt from {self.phone_number}")
 
         # Execute agent with optional conversation history
         result = await self._agent.run(

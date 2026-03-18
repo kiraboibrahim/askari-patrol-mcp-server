@@ -1,66 +1,89 @@
+"""
+Common utility functions for the Askari Patrol server.
+
+This module provides shared helpers used by both the MCP server and the
+async API client, primarily for JWT validation and payload inspection.
+"""
+
+import logging
 from typing import Any
 
 import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
+logger = logging.getLogger(__name__)
 
 
 def is_token_valid(
     token: str, secret_key: str | None = None, algorithms: list[str] | None = None
 ) -> bool:
     """
-    Validates a JWT by checking its signature and expiration time.
+    Validate a JWT by checking its signature and expiration claim.
+
+    When ``secret_key`` is provided the token signature is fully verified.
+    When it is ``None`` only the ``exp`` claim is checked — useful for
+    client-side expiry detection where the signing secret is unavailable.
 
     Args:
-        token (str): The JWT string to validate.
-        secret_key (str, optional): The secret key used to sign the token.
-                                    Required for signature verification.
-        algorithms (List[str]): A list of acceptable signature algorithms. Defaults to ["HS256"].
+        token: The encoded JWT string to validate.
+        secret_key: Optional HMAC secret used to verify the signature.
+            Defaults to ``None`` (expiry-only check).
+        algorithms: Acceptable signing algorithms.  Defaults to ``["HS256"]``.
 
     Returns:
-        bool: True if the token is valid and not expired, False otherwise.
+        bool: ``True`` if the token is structurally valid and has not expired,
+            ``False`` otherwise.
     """
     if algorithms is None:
         algorithms = ["HS256"]
+
     try:
         if secret_key:
             jwt.decode(
                 token,
                 key=secret_key,
                 algorithms=algorithms,
-                # Explicitly check expiry (exp claim)
                 options={"verify_signature": True, "verify_exp": True},
             )
         else:
-            # Verify only expiry if no secret key is provided
+            # No secret available — verify expiry only (safe for client-side checks).
             jwt.decode(token, options={"verify_signature": False, "verify_exp": True})
 
         return True
 
     except ExpiredSignatureError:
-        # The token is structurally valid but past its expiration time (exp claim).
-        print("Token validation failed: Signature expired.")
+        logger.debug("Token rejected: expired.")
         return False
 
     except InvalidTokenError as e:
-        # Catches all other validation failures (e.g., incorrect signature, malformed token).
-        print(
-            f"Token validation failed: Invalid token structure or signature. Error: {e}"
-        )
+        logger.debug("Token rejected: invalid structure or signature. %s", e)
         return False
-    except Exception as e:
-        # Catch unexpected errors during decoding.
-        print(f"An unexpected error occurred during token decoding: {e}")
+
+    except Exception:
+        logger.exception("Unexpected error during token validation.")
         return False
 
 
 def decode_token_payload(token: str) -> dict[str, Any] | None:
     """
-    Decodes a JWT to extract its payload without verifying the signature or expiry.
-    Useful for inspecting claims quickly.
+    Decode a JWT and return its payload without any verification.
+
+    This function deliberately skips signature and expiry checks, making it
+    safe to call on already-expired tokens when you only need to inspect
+    claims (e.g. to display a username or company name after session expiry).
+
+    Args:
+        token: The encoded JWT string to decode.
+
+    Returns:
+        dict[str, Any] | None: The decoded payload dictionary, or ``None``
+            if the token is malformed and cannot be decoded at all.
+
+    Warning:
+        Do **not** use this function to make access-control decisions.
+        Use :func:`is_token_valid` for that purpose.
     """
     try:
-        # Uses 'verify=False' to skip all verification steps, allowing inspection
-        # of expired or unsigned tokens.
         return jwt.decode(
             token,
             options={
@@ -69,6 +92,6 @@ def decode_token_payload(token: str) -> dict[str, Any] | None:
                 "verify_aud": False,
             },
         )
-    except Exception as e:
-        print(f"Failed to decode token payload: {e}")
+    except Exception:
+        logger.exception("Failed to decode token payload.")
         return None

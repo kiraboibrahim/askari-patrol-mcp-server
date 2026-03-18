@@ -23,7 +23,6 @@ class SecurityGuardInShift(BaseSecurityGuard):
 class Shift(BaseModel):
     """Schema for a site shift."""
 
-    id: int
     type: Literal["DAY", "NIGHT"]
     site: BaseSite
     securityGuards: list[SecurityGuardInShift]
@@ -56,7 +55,6 @@ class SiteInNotification(BaseSite):
 class Notification(BaseModel):
     """Schema for a site notification/alert."""
 
-    id: int
     dateCreatedAt: str  # "YYYY-MM-DD"
     timeCreatedAt: str  # "HH:MM:SS"
     site: SiteInNotification
@@ -69,7 +67,6 @@ class GetGuardListItem(BaseSecurityGuard):
 class CallLog(BaseModel):
     """Schema for a recorded call log."""
 
-    id: int
     time: str  # "HH:MM"
     date: str  # "YYYY-MM-DD"
     isAnswered: bool
@@ -160,9 +157,7 @@ class PerformanceMonth(BaseModel):
 class PerformanceGuard(BaseModel):
     """Minimal guard info as shown in performance reports."""
 
-    id: int
     name: str
-    uniqueId: str
 
 
 class GetGuardPerformanceReportResponse(BaseModel):

@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short
+            type=ref,event=tag
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER || 'legitsystems' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/docker-apps/askariagent
+            # Pull latest changes (if any in compose files/config)
+            git pull origin main
+            # Log in to GHCR on the VPS
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # Pull new images
+            docker compose -f docker-compose.prod.yml pull
+            # Restart services
+            docker compose -f docker-compose.prod.yml up -d
+            # Cleanup old images
+            docker image prune -f
