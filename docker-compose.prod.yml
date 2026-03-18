@@ -5,11 +5,8 @@ services:
     image: ghcr.io/kiraboibrahim/askari-patrol-mcp-server:${ASKARI_VERSION:-latest}
     ports:
       - "4000:8000"
-    environment:
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
+    env_file:
+      - .env
     volumes:
       - askari_logs:/app/logs
       - askari_data:/app/data
@@ -20,16 +17,11 @@ services:
     ports:
       - "4001:8001"
     command: uv run python -m askari_patrol_client.whatsapp_client
+    env_file:
+      - .env
     environment:
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
-      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
-      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://server:8000/mcp}
-      ASKARI_MODEL: ${ASKARI_MODEL}
-      ROLLBAR_SERVER_TOKEN: ${ROLLBAR_SERVER_TOKEN}
+      # Override MCP_SERVER_URL to use Docker's internal DNS (not localhost)
+      MCP_SERVER_URL: http://server:8000/mcp
     volumes:
       - askari_logs:/app/logs
       - askari_data:/app/data

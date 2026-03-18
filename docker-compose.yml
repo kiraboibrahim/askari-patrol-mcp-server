@@ -5,12 +5,8 @@ services:
     build: .
     ports:
       - "8000:8000"
-    environment:
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - ROLLBAR_SERVER_TOKEN=${ROLLBAR_SERVER_TOKEN}
-
+    env_file:
+      - .env
     volumes:
       - ./src:/app/src
       - ./scripts:/app/scripts
@@ -23,23 +19,14 @@ services:
     ports:
       - "8001:8001"
     command: uv run python -m askari_patrol_client.whatsapp_client
-    environment:
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
-      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://server:8000/mcp}
-      - ASKARI_MODEL=${ASKARI_MODEL}
-      - ROLLBAR_SERVER_TOKEN=${ROLLBAR_SERVER_TOKEN}
+    env_file:
+      - .env
     volumes:
       - ./src:/app/src
       - ./scripts:/app/scripts
       - ./.env:/app/.env
       - ./logs:/app/logs
       - ./conversations.db:/app/conversations.db
-
     depends_on:
       - server
 
