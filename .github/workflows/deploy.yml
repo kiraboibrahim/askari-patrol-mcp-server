@@ -55,7 +55,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_IP }}
-          username: ${{ secrets.VPS_USER || 'legitsystems' }}
+          username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/docker-apps/askariagent
