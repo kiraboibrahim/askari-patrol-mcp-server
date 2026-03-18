@@ -461,4 +461,7 @@ async def get_guard_performance_report(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    try:
+        mcp.run(transport="streamable-http")
+    except KeyboardInterrupt:
+        print("👋 Program stopped by user. Goodbye!")
