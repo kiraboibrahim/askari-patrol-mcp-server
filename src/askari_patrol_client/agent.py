@@ -354,7 +354,12 @@ class AskariAgent:
 
         try:
             auth_res = await self._server.direct_call_tool("is_authenticated", {})
-            # Parse the JSON text from the MCP ToolResult content blocks
+
+            # Pydantic AI's direct_call_tool returns the tool's return value directly (usually a dict)
+            if isinstance(auth_res, dict):
+                return auth_res.get("authenticated", False)
+
+            # Fallback for MCP ToolResult content blocks (if any)
             for part in getattr(auth_res, "content", []):
                 if hasattr(part, "text"):
                     data = json.loads(part.text)
