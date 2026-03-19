@@ -299,11 +299,7 @@ class AskariAgent:
 
                     data = json.loads(content) if isinstance(content, str) else content
 
-                    if (
-                        isinstance(data, dict)
-                        and data.get("success")
-                        and "access_token" in data
-                    ):
+                    if isinstance(data, dict) and "access_token" in data:
                         token = data["access_token"]
 
                         # Validate the token before attempting any network call;
@@ -345,6 +341,27 @@ class AskariAgent:
             await self._server.__aexit__(None, None, None)
             self._server = None
             self._agent = None
+
+    async def is_authenticated(self) -> bool:
+        """
+        Check if the current session is authenticated on the MCP server.
+
+        Returns:
+            bool: True if authenticated, False otherwise.
+        """
+        if not self._server:
+            return False
+
+        try:
+            auth_res = await self._server.direct_call_tool("is_authenticated", {})
+            # Parse the JSON text from the MCP ToolResult content blocks
+            for part in getattr(auth_res, "content", []):
+                if hasattr(part, "text"):
+                    data = json.loads(part.text)
+                    return data.get("authenticated", False)
+        except Exception as e:
+            logger.warning("Auth check failed for %s: %s", self.phone_number, e)
+        return False
 
     async def run(self, message: str, use_context: bool = True) -> str:
         """
@@ -388,23 +405,17 @@ class AskariAgent:
             )
 
         # Pre-flight auth gate: verify the session before every LLM invocation.
-        # Using direct_call_tool (not call_tool) because we are outside the
-        # agent run loop and have no RunContext or ToolsetTool to pass.
-        is_auth = False
-        try:
-            auth_res = await self._server.direct_call_tool("is_authenticated", {})
-            # Parse the JSON text from the MCP ToolResult content blocks
-            for part in getattr(auth_res, "content", []):
-                if hasattr(part, "text"):
-                    data = json.loads(part.text)
-                    is_auth = data.get("authenticated", False)
-                    break
-        except Exception as e:
-            logger.warning(
-                "Auth pre-flight check failed for %s: %s", self.phone_number, e
-            )
+        # If not authenticated, try to restore from history before blocking.
+        is_auth = await self.is_authenticated()
 
-        # If not authenticated, check if this looks like a login attempt
+        if not is_auth:
+            logger.info(
+                "Session expired for %s; attempting silent restore", self.phone_number
+            )
+            await self._restore_session()
+            is_auth = await self.is_authenticated()
+
+        # If still not authenticated, check if this looks like a login attempt
         if not is_auth:
             # Check for email pattern to allow conversational login
             is_login_attempt = bool(_EMAIL_PATTERN.search(message))
