@@ -135,7 +135,7 @@ class PerformanceDailyStat(BaseModel):
     """Schema for a guard's daily performance stats."""
 
     date: str  # "YYYY-MM-DD"
-    score: float
+    score: str
     validPatrols: int
     expectedPatrols: int
 

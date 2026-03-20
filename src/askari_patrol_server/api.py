@@ -6,6 +6,8 @@ Askari Patrol guard tour management system API. It handles authentication,
 site management, patrol tracking, and notification retrieval.
 """
 
+from collections.abc import AsyncIterator
+
 import httpx
 from common.schemas.response_schemas import (
     GetGuardPatrolsResponse,
@@ -72,6 +74,35 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         data = resp.json()
         self._set_auth_header(data["access_token"])
         return data
+
+    async def _search_all_pages(self, endpoint: str, query: str) -> AsyncIterator[dict]:
+        """
+        Helper to fetch all matching records across all pagination pages for a search.
+
+        Args:
+            endpoint: API endpoint to query (e.g., "/sites").
+            query: Search string.
+
+        Returns:
+            AsyncIterator[dict]: An async iterator over all matching items from all result pages.
+        """
+        current_page = 1
+        while True:
+            resp = await self.get(
+                endpoint, params={"search": query, "page": current_page}
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+
+            for item in batch.get("data", []):
+                yield item
+
+            # Stop if we've reached the last page or meta information is missing
+            meta = batch.get("meta", {})
+            total_pages = meta.get("totalPages", 0)
+            if current_page >= total_pages:
+                break
+            current_page += 1
 
     # get_stats is commented out as it is restricted to super admins.
     #     async def get_stats(self) -> GetStatsResponse:
@@ -227,7 +258,11 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         """
         resp = await self.get(f"/sites/{site_id}/{year}/{month}/performance")
         resp.raise_for_status()
-        return resp.text
+        try:
+            # Score is returned as a decimal fraction (e.g. 0.0357... -> 3.57%)
+            return f"{float(resp.text) * 100:.2f}%"
+        except (ValueError, TypeError):
+            return resp.text
 
     async def get_site_notifications(
         self,
@@ -350,7 +385,25 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
             params={"year": year, "month": month},
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+
+        if "overallMonthScore" in data:
+            try:
+                # Backend already multiplies by 100 and formats as string (e.g., "75.50")
+                data["overallMonthScore"] = f"{float(data['overallMonthScore']):.2f}%"
+            except (ValueError, TypeError):
+                pass
+
+        if "dailyStats" in data:
+            for stat in data["dailyStats"]:
+                if "score" in stat:
+                    try:
+                        # Daily score is returned as decimal fraction (e.g. 0.0357... -> 3.57%)
+                        stat["score"] = f"{float(stat['score']) * 100:.2f}%"
+                    except (ValueError, TypeError):
+                        pass
+
+        return data
 
     async def resolve_site_id(self, site_name: str) -> int:
         """
@@ -365,36 +418,27 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         Raises:
             LookupError: If site not found or name is ambiguous.
         """
-        # 1. Try search first for direct match
-        search_resp = await self.search_sites(site_name)
-        results = search_resp.get("data", [])
-
-        # Exact case-insensitive match check
-        exact_matches = [s for s in results if s["name"].lower() == site_name.lower()]
-        if len(exact_matches) == 1:
-            return exact_matches[0]["id"]
+        results = []
+        async for s in self._search_all_pages("/sites", site_name):
+            # Early exit: if we find an exact match, we assume it's the intended site
+            if s["name"].lower() == site_name.lower():
+                return s["id"]
+            results.append(s)
 
         if not results:
-            # Fallback to listing all if search yielded nothing (e.g., partial match failed)
-            sites_resp = await self.get_sites()
-            all_sites = sites_resp.get("data", [])
-            exact_matches = [
-                s for s in all_sites if s["name"].lower() == site_name.lower()
-            ]
-            if len(exact_matches) == 1:
-                return exact_matches[0]["id"]
-
             raise LookupError(
-                f"Site '{site_name}' not found. Use `get_sites` to see available site names."
+                f"Site '{site_name}' not found. You can list all available sites to see the correct names."
             )
 
-        if len(results) > 1:
-            names = [s["name"] for s in results]
-            raise LookupError(
-                f"Ambiguous site name '{site_name}'. Found: {', '.join(names)}. Please provide the exact name."
-            )
+        # If exactly one result (partial match), return its ID
+        if len(results) == 1:
+            return results[0]["id"]
 
-        return results[0]["id"]
+        # Multiple partial matches found (and no exact match hit during iteration)
+        names = [s["name"] for s in results]
+        raise LookupError(
+            f"Ambiguous site name '{site_name}'. Found: {', '.join(names)}. Please be more specific."
+        )
 
     async def resolve_guard_id(self, guard_name: str) -> int:
         """
@@ -409,31 +453,32 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         Raises:
             LookupError: If guard not found or name is ambiguous.
         """
-        search_resp = await self.search_guards(guard_name)
-        results = search_resp.get("data", [])
+        results = []
+        async for g in self._search_all_pages("/users/security-guards", guard_name):
+            # Early exit: check for exact name match (First Last OR Last First)
+            first_name = g.get("firstName", "").lower()
+            last_name = g.get("lastName", "").lower()
+            query = guard_name.lower()
 
-        # Exact name match against firstName + lastName
-        exact_matches = []
-        for g in results:
-            full_name = f"{g['firstName']} {g['lastName']}".lower()
-            if full_name == guard_name.lower():
-                exact_matches.append(g)
-
-        if len(exact_matches) == 1:
-            return exact_matches[0]["id"]
+            if (
+                f"{first_name} {last_name}" == query
+                or f"{last_name} {first_name}" == query
+            ):
+                return g["id"]
+            results.append(g)
 
         if not results:
-            raise LookupError(
-                f"Guard '{guard_name}' not found. Use `search_guards` to verify the name."
-            )
+            raise LookupError(f"Guard '{guard_name}' not found.")
 
-        if len(results) > 1:
-            names = [f"{g['firstName']} {g['lastName']}" for g in results]
-            raise LookupError(
-                f"Ambiguous guard name '{guard_name}'. Found: {', '.join(names)}. Please verify the name."
-            )
+        # Exactly one partial match
+        if len(results) == 1:
+            return results[0]["id"]
 
-        return results[0]["id"]
+        # Still ambiguous
+        names = [f"{g['firstName']} {g['lastName']}" for g in results]
+        raise LookupError(
+            f"Ambiguous guard name '{guard_name}'. Found: {', '.join(names)}. Please be more specific."
+        )
 
     async def get_help(self) -> str:
         """
