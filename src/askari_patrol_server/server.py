@@ -242,6 +242,9 @@ async def get_site_guards(site_name: str) -> GetSiteGuardsResponse:
     Returns:
         GetSiteGuardsResponse: List of guards across all shifts at the site.
 
+    Raises:
+        LookupError: If the site name is not found or is ambiguous.
+
     Examples:
         get_site_guards("Riverside")
         get_site_guards("West Gate")
@@ -276,6 +279,9 @@ async def get_site_patrols(
     Returns:
         GetSitePatrolsResponse: Paginated list of patrol records.
 
+    Raises:
+        LookupError: If the site name is not found or is ambiguous.
+
     Examples:
         get_site_patrols("Riverside", start_date="2024-01-01", end_date="2024-01-31")
         get_site_patrols("West Gate", start_time="08:00", end_time="18:00")
@@ -306,6 +312,9 @@ async def get_site_call_logs(site_name: str, page: int = 1) -> GetSiteCallLogsRe
     Returns:
         GetSiteCallLogsResponse: Paginated list of call logs for the site.
 
+    Raises:
+        LookupError: If the site name is not found or is ambiguous.
+
     Examples:
         get_site_call_logs("Riverside")
         get_site_call_logs("West Gate", page=2)
@@ -326,6 +335,9 @@ async def get_site_monthly_score(site_name: str, year: int, month: int) -> str:
         site_name: The exact name of the site. Example: "Riverside"
         year: The year (e.g., 2024)
         month: The month (1-12)
+
+    Raises:
+        LookupError: If the site name is not found or is ambiguous.
     """
     client = get_client()
     site_id = await client.resolve_site_id(site_name)
@@ -352,6 +364,9 @@ async def get_site_notifications(
 
     Returns:
         GetSiteNotificationsResponse: Paginated list of site alerts/notifications.
+
+    Raises:
+        LookupError: If the site name is not found or is ambiguous.
 
     Examples:
         get_site_notifications("West Gate", start_date="2024-01-01", end_date="2024-01-31")
@@ -419,6 +434,9 @@ async def get_guard_patrols(
     Returns:
         GetGuardPatrolsResponse: Paginated list of patrols completed by this guard.
 
+    Raises:
+        LookupError: If the guard name is not found or is ambiguous.
+
     Examples:
         get_guard_patrols("John Doe", start_date="2024-01-01", end_date="2024-01-31")
         get_guard_patrols("Jane Smith", start_time="08:00", end_time="17:00")
@@ -451,6 +469,9 @@ async def get_guard_performance_report(
 
     Returns:
         GetGuardPerformanceReportResponse: Detailed monthly performance metrics.
+
+    Raises:
+        LookupError: If the guard name is not found or is ambiguous.
 
     Examples:
         get_guard_performance_report("John Doe", 2024, 3)
