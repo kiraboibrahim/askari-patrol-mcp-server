@@ -30,7 +30,7 @@ from common.schemas.response_schemas import (
     GetSiteGuardsResponse,
     GetSiteNotificationsResponse,
     GetSitePatrolsResponse,
-    GetSitesRespnose,
+    GetSitesResponse,
     LoginResponse,
 )
 from mcp.server.fastmcp import FastMCP
@@ -173,50 +173,32 @@ async def restore_session(token: str) -> dict:
 
 @mcp.tool()
 @track_errors()
-async def search_sites(query: str, page: int = 1) -> GetSitesRespnose:
+async def get_sites(query: str | None = None, page: int = 1) -> GetSitesResponse:
     """
-    Search for sites by name (partial or full matches).
-    Use this when the user's site name is incomplete or potentially misspelled.
+    List or search for sites with pagination.
+    Use this to get all sites or search for specific ones by name.
     Requires authentication.
 
     Args:
-        query: Partial or full site name to search for. Example: "Gate", "West".
+        query: Optional search term to filter sites by name. Example: "Gate", "West".
         page: Page number for paginated results. Defaults to 1.
 
     Returns:
-        GetSitesRespnose: Paginated list of sites matching the query.
+        GetSitesResponse: Paginated list of sites matching the criteria.
 
     Examples:
-        search_sites("Gate", page=1)
-        search_sites("Riverside")
+        get_sites(query="Gate", page=1)
+        get_sites()
     """
     client = get_client()
-    return await client.search_sites(query, page)
-
-
-@mcp.tool()
-@track_errors()
-async def get_sites(page: int = 1) -> GetSitesRespnose:
-    """
-    List all sites in the system.
-    Use this to get a complete list when you don't know the exact site name.
-    Requires authentication.
-
-    Args:
-        page: Page number for paginated results. Defaults to 1.
-
-    Returns:
-        GetSitesRespnose: Paginated list of all registered sites.
-    """
-    client = get_client()
-    return await client.get_sites(page)
+    return await client.get_sites(query=query, page=page)
 
 
 @mcp.tool()
 @track_errors()
 async def is_authenticated() -> dict:
     """
-    [INTERNAL] Check whether the current session has a valid, non-expired token.
+    Check whether the current session has a valid, non-expired token.
 
     Called by the Python client before every user request as a pre-flight
     authentication gate.  Returns a plain dict so the result can be parsed

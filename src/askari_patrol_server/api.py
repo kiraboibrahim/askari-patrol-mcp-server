@@ -18,7 +18,7 @@ from common.schemas.response_schemas import (
     GetSiteNotificationsResponse,
     GetSitePatrolsResponse,
     GetSiteShiftsResponse,
-    GetSitesRespnose,
+    GetSitesResponse,
     LoginResponse,
 )
 from common.utils import is_token_valid
@@ -116,32 +116,23 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
     #         resp.raise_for_status()
     #         return resp.json()
 
-    async def search_sites(self, query: str, page: int | None = 1) -> GetSitesRespnose:
+    async def get_sites(
+        self, query: str | None = None, page: int = 1
+    ) -> GetSitesResponse:
         """
-        Search for sites using a query string.
+        List or search for sites with pagination.
 
         Args:
-            query: The search term for site names or descriptions.
+            query: Optional search term to filter sites by name.
             page: Optional page number for pagination.
 
         Returns:
-            GetSitesRespnose: Paginated list of matching sites.
+            GetSitesResponse: Paginated list of sites.
         """
-        resp = await self.get("/sites", params={"search": query, "page": page})
-        resp.raise_for_status()
-        return resp.json()
-
-    async def get_sites(self, page: int | None = 1) -> GetSitesRespnose:
-        """
-        List all sites with pagination.
-
-        Args:
-            page: Optional page number for pagination.
-
-        Returns:
-            GetSitesRespnose: Paginated list of all sites.
-        """
-        resp = await self.get("/sites", params={"page": page})
+        params = {"page": page}
+        if query:
+            params["search"] = query
+        resp = await self.get("/sites", params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -418,6 +409,7 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         Raises:
             LookupError: If site not found or name is ambiguous.
         """
+        site_name = site_name.strip()
         results = []
         async for s in self._search_all_pages("/sites", site_name):
             # Early exit: if we find an exact match, we assume it's the intended site
@@ -453,6 +445,7 @@ class AskariPatrolAsyncClient(httpx.AsyncClient):
         Raises:
             LookupError: If guard not found or name is ambiguous.
         """
+        guard_name = guard_name.strip()
         results = []
         async for g in self._search_all_pages("/users/security-guards", guard_name):
             # Early exit: check for exact name match (First Last OR Last First)

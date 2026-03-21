@@ -104,10 +104,10 @@ GetGuardPatrolsResponse = PaginatedResponse[GuardPatrolListItem]
 
 GetSiteNotificationsResponse = PaginatedResponse[Notification]
 GetSiteCallLogsResponse = PaginatedResponse[CallLog]
-GetSitesRespnose = PaginatedResponse[SiteListItem]
+GetSitesResponse = PaginatedResponse[SiteListItem]
 GetSiteShiftsResponse = list[Shift]
 GetSiteGuardsResponse = list[SecurityGuardInShift]
-GetSitePatrolsResponse = PaginatedResponse[SiteInPatrol]
+GetSitePatrolsResponse = PaginatedResponse[SitePatrolListItem]
 
 
 class LoginResponse(BaseModel):
