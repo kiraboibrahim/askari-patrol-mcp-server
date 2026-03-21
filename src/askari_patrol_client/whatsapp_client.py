@@ -563,9 +563,6 @@ async def process_with_agent(
     except AuthenticationError:
         logger.info(f"Authentication required for {phone_number}")
         return MSG_AUTH_REQUIRED
-    except LookupError as e:
-        logger.info(f"Lookup error for {phone_number}: {e}")
-        return str(e)
     except Exception as e:
         logger.error(f"Agent processing error for {phone_number}: {e}")
         await report_error_to_rollbar_async(exc=e)
